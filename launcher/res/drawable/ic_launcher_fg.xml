@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- App icon foreground: a low sun over two mountain ridges, inside the adaptive-icon safe zone. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#FFF4CE8E" android:pathData="M64,44m-7,0a7,7 0 1,0 14,0a7,7 0 1,0 -14,0" />
+    <path android:fillColor="#FF4A6C9B" android:pathData="M20,76L42,48L53,61L66,42L88,76Z" />
+    <path android:fillColor="#FF0D1626" android:pathData="M20,76L36,63L48,71L60,58L88,76Z" />
+</vector>

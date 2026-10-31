@@ -1,0 +1,8 @@
+.DS_Store
+# Per-TV state and screenshots
+backup/
+# Build output (the APK people install lives in dist/)
+launcher/build/
+# Signing key: back it up, never publish it
+*.keystore
+*.idsig

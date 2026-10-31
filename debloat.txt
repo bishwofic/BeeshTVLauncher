@@ -1,0 +1,37 @@
+# TCL Google TV (Smart TV Pro, G10), Android 14
+# Apply: ./debloat.sh <tv-ip>   Undo: ./restore.sh <tv-ip>  (run ./backup.sh <tv-ip> first)
+# Everything is DISABLED for user 0, never uninstalled.
+# Kept on purpose: Chromecast, AirPlay, Miracast, Game bar, USB media player, Listen Alone,
+# Live TV/HDMI (com.tcl.tv, tvinput, suspension), remote pairing, keyboard, voice search, Play Store.
+
+# Tracking, telemetry and ads
+tv.samba.ssm.ui                     # Samba TV: ACR, fingerprints what's on screen
+com.tcl.ttvs                        # TCL core service: BI analytics, account sync
+com.tcl.logkit                      # TCL log collection / upload
+com.tcl.usercenter                  # TCL account / phone binding
+com.tcl.messagebox                  # TCL promo message popups
+com.tcl.esticker                    # on-screen promo stickers
+com.tcl.partnercustomizer           # partner promo rows
+com.tcl.smartlink.core              # boot-time silent "custom install" of promoted apps
+
+# TCL content tabs and channels
+com.tcl.channelplus                 # "TCL Channel"
+com.tcl.waterfall.overseas          # "TCL" content tab
+com.tcl.tv.tclhome_passive          # TCL home content feed
+
+# TCL clutter
+com.tcl.guard                       # "TV guard" cleaner
+com.tcl.hotelmenu                   # hotel mode
+com.tcl.exhibit                     # store demo mode
+com.tcl.repairguide                 # repair guide
+com.tcl.ocean.instructions          # e-manual
+com.tcl.magiconnectfree             # T-Cast / MagiConnect (not used)
+com.tcl.smartalexa                  # Alexa (not used)
+com.tcl.hearaid                     # hearing-assist (not used)
+
+# Google extras (not used)
+com.google.android.apps.tv.dreamx   # ambient screensaver with recommendations
+com.google.android.videos           # Google TV / Play Movies
+com.google.android.youtube.tvmusic  # YouTube Music
+com.google.android.play.games       # Play Games
+com.google.android.feedback         # feedback / crash upload
