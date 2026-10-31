@@ -34,8 +34,15 @@ final class Prefs {
     static final String OFF = "Off";
     static final String[] DEFAULT_CITIES = {"Nepal"};
 
-    /** Fixed grid: six 16:9 tiles per row. */
-    static final int COLUMNS = 6;
+    /** How Home lays out its apps; see MainActivity's layouts section. */
+    static final String[] LAYOUTS = {"Tiles", "Pills", "Rows", "Metro", "Dock"};
+    static final int TILES = 0, PILLS = 1, ROWS = 2, METRO = 3, DOCK = 4;
+    static final String[] SIZES = {"Tiny", "Small", "Medium", "Large"};
+    /** Space between tiles in the Tiles layout, across and down, in dp. */
+    static final int[] TILE_GAPS = {0, 5, 10, 15, 20, 30};
+    /** How blurred the section background is; the blurred photo covers the real one by this much. */
+    static final String[] BLUR_LEVELS = {"Light", "Medium", "Hard"};
+    static final int[] BLUR_ALPHA = {110, 190, 255};
     static final int[] WALL_MINUTES = {5, 10, 15, 30, 60};
 
     static final String[] WALL_STYLES = {"Landscapes", "Cityscapes", "Seasons"};
@@ -51,7 +58,7 @@ final class Prefs {
     /** Never listed: system helpers, Settings (top bar), Live TV (Inputs), other launchers. */
     static final List<String> HIDDEN = Arrays.asList(
             "com.tcl.tv", "com.tcl.suspension", "com.tcl.dashboard", "com.android.tv.settings",
-            "com.spocky.projengmenu", "com.wolf.google.lm", "com.beeshtv.home");
+            "com.spocky.projengmenu", "com.wolf.google.lm");
 
     private final SharedPreferences sp;
 
@@ -60,8 +67,42 @@ final class Prefs {
     SharedPreferences raw() { return sp; }
 
     /** A soft block behind each section's tiles. */
-    boolean sectionWrap() { return sp.getBoolean("section_wrap", true); }
-    void setSectionWrap(boolean v) { sp.edit().putBoolean("section_wrap", v).apply(); }
+    // Icon size, section background and blur are kept per layout, so each one comes back as you left it.
+
+    /** "icon_size.tiles", "icon_size.metro"… for the current layout. */
+    private String perLayout(String key) { return key + "." + LAYOUTS[layout()].toLowerCase(java.util.Locale.ROOT); }
+
+    boolean sectionWrap() { return sp.getBoolean(perLayout("section_wrap"), false); }
+    void setSectionWrap(boolean v) { sp.edit().putBoolean(perLayout("section_wrap"), v).apply(); }
+
+    int blurLevel() { return Math.floorMod(sp.getInt(perLayout("blur_level"), 1), BLUR_LEVELS.length); }
+    void setBlurLevel(int v) { sp.edit().putInt(perLayout("blur_level"), Math.floorMod(v, BLUR_LEVELS.length)).apply(); }
+
+    int layout() { return Math.floorMod(sp.getInt("layout", TILES), LAYOUTS.length); }
+    void setLayout(int v) { sp.edit().putInt("layout", Math.floorMod(v, LAYOUTS.length)).apply(); }
+
+    /**
+     * 0 tiny, 1 small, 2 medium, 3 large, for the current layout. Saved as "size.<layout>"; sizes saved
+     * before Tiny existed ("icon_size.<layout>", 0 small … 2 large) move up one so they stay the same.
+     */
+    int iconSize() {
+        String key = perLayout("size");
+        if (!sp.contains(key) && sp.contains(perLayout("icon_size"))) return sp.getInt(perLayout("icon_size"), 1) + 1;
+        return Math.floorMod(sp.getInt(key, 2), SIZES.length);
+    }
+    void setIconSize(int v) { sp.edit().putInt(perLayout("size"), Math.floorMod(v, SIZES.length)).apply(); }
+
+    /** Size of the icons in the Dock itself; Icon size is for the tiles under it. */
+    int dockSize() { return Math.floorMod(sp.getInt("dock_size", 2), SIZES.length); }
+    void setDockSize(int v) { sp.edit().putInt("dock_size", Math.floorMod(v, SIZES.length)).apply(); }
+
+    /** Whether this layout has section backgrounds at all (Metro's tiles touch; Dock has its bar). */
+    boolean hasSectionBackground() { return layout() != METRO && layout() != DOCK; }
+
+    int tileGapX() { return sp.getInt("tile_gap_x", 5); }
+    void setTileGapX(int v) { sp.edit().putInt("tile_gap_x", v).apply(); }
+    int tileGapY() { return sp.getInt("tile_gap_y", 5); }
+    void setTileGapY(int v) { sp.edit().putInt("tile_gap_y", v).apply(); }
 
     int wallStyle() { return sp.getInt("wall_style", 0); }
     void setWallStyle(int v) { sp.edit().putInt("wall_style", Math.floorMod(v, WALL_STYLES.length)).apply(); }

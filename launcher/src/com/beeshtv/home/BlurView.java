@@ -5,6 +5,7 @@ import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Outline;
 import android.graphics.Paint;
+import android.graphics.Path;
 import android.graphics.RectF;
 import android.view.View;
 import android.view.ViewOutlineProvider;
@@ -15,7 +16,7 @@ import android.widget.FrameLayout;
  * kept registered to the screen, under a light dark tint. No border, no highlights. The blur is
  * computed once per photo or per panel, so drawing costs nothing extra.
  */
-final class BlurView extends FrameLayout {
+class BlurView extends FrameLayout {
     private Bitmap backdrop;
     private final float radius;
     private final Paint image = new Paint(Paint.FILTER_BITMAP_FLAG);
@@ -23,6 +24,7 @@ final class BlurView extends FrameLayout {
     private final RectF dst = new RectF(), box = new RectF();
     private final int[] loc = new int[2];
     private float darken = 0.28f;
+    private final Path round = new Path();
 
     BlurView(Context c, float radius) {
         super(c);
@@ -39,8 +41,30 @@ final class BlurView extends FrameLayout {
         setAmount(0.5f);
     }
 
+    /**
+     * Keep the rounded shape but let children draw past it, so a focused tile can grow over the edge.
+     * The blur and tint are clipped to the shape instead of the whole view.
+     */
+    void letChildrenOut() {
+        setClipToOutline(false);
+        setClipChildren(false);
+        setClipToPadding(false);
+    }
+
     void setBackdrop(Bitmap b) {
         backdrop = b;
+        invalidate();
+    }
+
+    /** A light blur: the blurred photo only partly covers the real one (255 = fully blurred). */
+    void setBackdropAlpha(int a) {
+        image.setAlpha(a);
+        invalidate();
+    }
+
+    /** A tint of any colour in place of the usual dark one, e.g. a faint white for frosted glass. */
+    void setTint(int argb) {
+        tint.setColor(argb);
         invalidate();
     }
 
@@ -58,6 +82,13 @@ final class BlurView extends FrameLayout {
 
     @Override
     protected void onDraw(Canvas c) {
+        box.set(0, 0, getWidth(), getHeight());
+        int save = c.save();
+        if (!getClipToOutline() && radius > 0) {
+            round.reset();
+            round.addRoundRect(box, radius, radius, Path.Direction.CW);
+            c.clipPath(round);
+        }
         if (backdrop != null && !backdrop.isRecycled()) {
             getLocationInWindow(loc);
             View root = getRootView();
@@ -66,7 +97,7 @@ final class BlurView extends FrameLayout {
             dst.set(-loc[0] * sx, -loc[1] * sy, (root.getWidth() - loc[0]) * sx, (root.getHeight() - loc[1]) * sy);
             c.drawBitmap(backdrop, null, dst, image);
         }
-        box.set(0, 0, getWidth(), getHeight());
         c.drawRoundRect(box, radius, radius, tint);
+        c.restoreToCount(save);
     }
 }

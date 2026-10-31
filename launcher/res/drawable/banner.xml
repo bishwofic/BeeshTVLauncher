@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- TV banner (Settings, app lists): the same sun and ridges, wide. -->
-<vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="320dp" android:height="180dp" android:viewportWidth="320" android:viewportHeight="180">
-    <path android:fillColor="#FF16233A" android:pathData="M0,0h320v180h-320z" />
-    <path android:fillColor="#FFF4CE8E" android:pathData="M206,64m-14,0a14,14 0 1,0 28,0a14,14 0 1,0 -28,0" />
-    <path android:fillColor="#FF4A6C9B" android:pathData="M0,180L0,140L70,92L120,128L185,70L260,128L320,104L320,180Z" />
-    <path android:fillColor="#FF0D1626" android:pathData="M0,180L0,156L90,120L160,150L230,112L320,150L320,180Z" />
-</vector>

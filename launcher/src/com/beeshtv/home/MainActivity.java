@@ -60,10 +60,12 @@ import android.view.ViewGroup;
 import android.view.ViewOutlineProvider;
 import android.widget.EditText;
 import android.widget.FrameLayout;
+import android.widget.HorizontalScrollView;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -112,10 +114,15 @@ public class MainActivity extends Activity {
         TvInputInfo info;
     }
 
-    /** One group of tiles on Home, with its own column count for D-pad movement. */
+    /**
+     * One group of tiles on Home, with its own column count for D-pad movement, or spatial when its
+     * tiles don't sit in even columns (Rows, Metro).
+     */
     static final class Section {
         final int kind;
         final List<View> cards = new ArrayList<>();
+        int cols = Integer.MAX_VALUE;
+        boolean spatial;
         Section(int kind) { this.kind = kind; }
     }
 
@@ -123,6 +130,7 @@ public class MainActivity extends Activity {
     private Wallpapers walls;
     private Weather weather;
     private Here here;
+    private Updater updater;
     private final Handler handler = new Handler(Looper.getMainLooper());
 
     private FrameLayout root;
@@ -133,11 +141,13 @@ public class MainActivity extends Activity {
     private int wallSlot = -1;
     private boolean firstWallpaper = true;
     private final List<BlurView> blurs = new ArrayList<>();
+    /** Section backgrounds on Home; rebuilt with Home, so kept apart from the fixed blurs. */
+    private final List<BlurView> sectionGlass = new ArrayList<>();
 
     // Menu bar
     private FrameLayout topBar;
     private final List<View> topItems = new ArrayList<>();
-    private TextView homeTab, appsTab, clock, date, ram, localWeather;
+    private TextView homeTab, appsTab, updateTab, clock, date, ram, localWeather;
     private ImageView localIcon, wifiBtn, btBtn, inputsBtn, settingsBtn;
     private BadgeView bellBtn;
     private ClockItem worldClock;
@@ -151,6 +161,8 @@ public class MainActivity extends Activity {
     private final List<Section> sections = new ArrayList<>();
     private final Map<View, int[]> cardPos = new HashMap<>();
     private int[] lastPos;
+    /** The layout and icon size Home was last built with (Prefs.LAYOUTS, Prefs.SIZES). */
+    private int look, size;
 
     // Apps
     private FrameLayout libBox;
@@ -189,6 +201,8 @@ public class MainActivity extends Activity {
         walls = new Wallpapers(this, prefs);
         weather = new Weather(prefs.raw());
         here = new Here(this, prefs.raw());
+        updater = new Updater(this, prefs.raw());
+        updater.onChange = this::onUpdateChanged;
         getWindow().getDecorView().setSystemUiVisibility(
                 View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
                         | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY | View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
@@ -233,8 +247,10 @@ public class MainActivity extends Activity {
         // Posted: on a cold start the window hands out default focus after onResume.
         handler.post(() -> { if (panel == null) focusContent(); });
         if (panel != null && "setup".equals(panel.kind)) panel.refill();
-        if (!prefs.raw().getBoolean("setup_shown", false) && !setupComplete()) {
-            prefs.raw().edit().putBoolean("setup_shown", true).apply();
+        // Keep asking while Home isn't ours; the rest once per new thing to allow (setup_shown_2 added
+        // installing updates), and it stays under Settings → Permissions.
+        if (!homeKept() || (!prefs.raw().getBoolean("setup_shown_2", false) && !setupComplete())) {
+            prefs.raw().edit().putBoolean("setup_shown_2", true).apply();
             handler.postDelayed(() -> { if (panel == null) openSetup(); }, 900);
         }
         if (firstShow) { firstShow = false; playEntrance(); }
@@ -245,6 +261,8 @@ public class MainActivity extends Activity {
         walls.refreshIfDue(false, () -> { if (wallKey == null || wallKey.startsWith("asset:")) rotate.run(); });
         here.refreshIfDue(() -> { applyClocks(); refreshWeather(true); });
         refreshWeather(false);
+        updater.check(false);
+        onUpdateChanged();
     }
 
     @Override
@@ -325,6 +343,8 @@ public class MainActivity extends Activity {
         appsTab.setOnClickListener(v -> focusContent());
         left.addView(homeTab, llp(-2, dp(32), 0, 0, dp(2), 0));
         left.addView(appsTab, llp(-2, dp(32), 0, 0, 0, 0));
+        updateTab = updateChip();
+        left.addView(updateTab, llp(-2, dp(32), dp(10), 0, 0, 0));
         topBar.addView(left, new FrameLayout.LayoutParams(-2, -2, Gravity.START | Gravity.CENTER_VERTICAL));
 
         // Status icons, with RAM in a quiet line underneath.
@@ -353,7 +373,7 @@ public class MainActivity extends Activity {
         right.addView(rule(), llp(dp(1), dp(36), dp(16), 0, dp(18), 0));
         right.addView(buildMainClock());
         topBar.addView(right, new FrameLayout.LayoutParams(-2, -2, Gravity.END | Gravity.CENTER_VERTICAL));
-        for (View v : new View[]{homeTab, appsTab, wifiBtn, btBtn, inputsBtn, bellBtn, settingsBtn}) topItems.add(v);
+        for (View v : new View[]{homeTab, appsTab, updateTab, wifiBtn, btBtn, inputsBtn, bellBtn, settingsBtn}) topItems.add(v);
         return topBar;
     }
 
@@ -441,6 +461,48 @@ public class MainActivity extends Activity {
         }
     }
 
+    /** "Update 1.2" next to HOME / APPS, once a new release has downloaded. */
+    private TextView updateChip() {
+        TextView t = Ui.onGlass(Ui.caps(Ui.text(this, 13, 700, Ui.TEXT), 0.06f));
+        t.setGravity(Gravity.CENTER_VERTICAL);
+        t.setPadding(dp(12), 0, dp(14), 0);
+        t.setFocusable(true);
+        t.setId(View.generateViewId());
+        t.setCompoundDrawables(Ui.icon(this, R.drawable.ic_update, Ui.TEXT, 15), null, null, null);
+        t.setCompoundDrawablePadding(dp(7));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setCornerRadius(dp(16));
+        bg.setColor(0x660A84FF);
+        t.setBackground(bg);
+        t.setOnFocusChangeListener((v, has) -> {
+            bg.setColor(has ? 0xE60A84FF : 0x660A84FF);
+            if (has) showPage(0);
+        });
+        t.setOnClickListener(v -> installUpdate());
+        t.setVisibility(View.GONE);
+        return t;
+    }
+
+    private void onUpdateChanged() {
+        if (updateTab == null) return;
+        boolean ready = updater.state() == Updater.State.READY;
+        updateTab.setText("Update " + updater.latest());
+        if (!ready && updateTab.hasFocus()) homeTab.requestFocus();
+        updateTab.setVisibility(ready ? View.VISIBLE : View.GONE);
+        if (panel != null && "updates".equals(panel.kind)) panel.refill();
+    }
+
+    /** Installs the downloaded update, first asking Android to let BeeshTV install apps if needed. */
+    private void installUpdate() {
+        if (!updater.canInstall()) {
+            Toast.makeText(this, "Allow BeeshTV to install apps, then press Back and choose Update again",
+                    Toast.LENGTH_LONG).show();
+            launch(updater.installPermissionScreen());
+            return;
+        }
+        if (updater.state() == Updater.State.READY) updater.install(); else updater.download();
+    }
+
     private ImageView iconButton(int icon, View.OnClickListener click) {
         ImageView b = new ImageView(this);
         styleIconButton(b, icon, click);
@@ -474,6 +536,8 @@ public class MainActivity extends Activity {
         homeScroll.setClipToPadding(false);
         homeScroll.setClipChildren(false);
         homeScroll.setPadding(dp(EDGE + INSET), dp(BAR_H), dp(EDGE + INSET), dp(56));
+        // The section glass shows the photo behind it, so it has to follow the scroll.
+        homeScroll.setOnScrollChangeListener((v, x, y, ox, oy) -> { for (BlurView g : sectionGlass) g.invalidate(); });
         // Rows scrolled up under the menu bar fade out instead of stopping at a hard edge.
         ((HomeScrollView) homeScroll).fadeUnder(dp(100), dp(176));
         homeList = new LinearLayout(this);
@@ -489,11 +553,12 @@ public class MainActivity extends Activity {
         return homeBox;
     }
 
+    /** Set like the HOME / APPS tabs: small caps with open tracking. */
     private TextView sectionHeader(int icon, String title) {
-        TextView t = Ui.onGlass(Ui.text(this, 23, 700, Ui.TEXT));
+        TextView t = Ui.caps(Ui.text(this, 13, 700, Ui.TEXT), 0.06f);
         t.setText(title);
-        t.setCompoundDrawables(Ui.icon(this, icon, Ui.TEXT, 19), null, null, null);
-        t.setCompoundDrawablePadding(dp(INSET - 19));
+        t.setCompoundDrawables(Ui.icon(this, icon, Ui.TEXT, 15), null, null, null);
+        t.setCompoundDrawablePadding(dp(INSET - 15));
         t.setShadowLayer(dp(8), 0, dp(1), 0x99000000);
         t.setGravity(Gravity.CENTER_VERTICAL);
         return t;
@@ -552,6 +617,7 @@ public class MainActivity extends Activity {
             v.setAmount(0f);
             v.setBackdrop(wallBlur);
         }
+        for (BlurView v : sectionGlass) v.setBackdrop(wallBlur);
     }
 
     private void showPage(int i) {
@@ -641,37 +707,35 @@ public class MainActivity extends Activity {
         fillLibrary(all);
     }
 
-    /** Six 16:9 tiles to a row, filling the width. */
-    private int tileWidth() {
-        int avail = getResources().getDisplayMetrics().widthPixels - 2 * dp(EDGE + INSET);
-        return (avail - (Prefs.COLUMNS - 1) * dp(GAP)) / Prefs.COLUMNS;
+    /** Width the tiles can use, between the side margins. */
+    private int availWidth() {
+        return getResources().getDisplayMetrics().widthPixels - 2 * dp(EDGE + INSET);
     }
 
     private void fillHome(List<App> yours, List<App> others) {
         homeList.removeAllViews();
         sections.clear();
         cardPos.clear();
-        int w = tileWidth();
+        sectionGlass.clear();
+        look = prefs.layout();
+        size = prefs.iconSize();
+        if (look == Prefs.DOCK) {
+            fillDock(yours);
+            addSection(SEC_OTHER, R.drawable.ic_grid, "Other Apps", others, dp(SECTION_GAP));
+            addSection(SEC_INPUTS, R.drawable.ic_input, "Inputs", inputs(), dp(SECTION_GAP));
+            return;
+        }
         homeList.addView(new View(this), new LinearLayout.LayoutParams(1, dp(CONTENT_TOP - BAR_H)));
-
-        List<View> tiles = new ArrayList<>();
-        for (App a : yours) tiles.add(tile(a));
-        addSection(SEC_YOURS, R.drawable.ic_grid, "Your Apps:", tiles, w, 0);
-
-        tiles = new ArrayList<>();
-        for (App a : others) tiles.add(tile(a));
-        addSection(SEC_OTHER, R.drawable.ic_grid, "Other Apps:", tiles, w, dp(SECTION_GAP));
-
-        tiles = new ArrayList<>();
-        for (Input in : inputs()) tiles.add(inputTile(in));
-        addSection(SEC_INPUTS, R.drawable.ic_input, "Inputs:", tiles, w, dp(SECTION_GAP));
+        addSection(SEC_YOURS, R.drawable.ic_grid, "Your Apps", yours, 0);
+        addSection(SEC_OTHER, R.drawable.ic_grid, "Other Apps", others, dp(SECTION_GAP));
+        addSection(SEC_INPUTS, R.drawable.ic_input, "Inputs", inputs(), dp(SECTION_GAP));
     }
 
-    private void addSection(int kind, int icon, String title, List<View> tiles, int w, int top) {
+    private void addSection(int kind, int icon, String title, List<?> items, int top) {
         Section s = new Section(kind);
         int index = sections.size();
         sections.add(s);
-        if (tiles.isEmpty()) return;
+        if (items.isEmpty()) return;
         homeList.addView(sectionHeader(icon, title), llp(-2, -2, -dp(INSET), top, 0, dp(14)));
         // One block behind the section's tiles. It reaches out by its padding, so tiles stay aligned
         // under the header whether the block is shown or not.
@@ -681,25 +745,509 @@ public class MainActivity extends Activity {
         block.setClipChildren(false);
         block.setClipToPadding(false);
         block.setPadding(pad, pad, pad, pad);
-        if (prefs.sectionWrap()) {
-            GradientDrawable bg = new GradientDrawable();
-            bg.setCornerRadius(dp(12) + pad);
-            bg.setColor(Ui.CURRENT);
-            block.setBackground(bg);
+        if (prefs.sectionWrap() && prefs.hasSectionBackground()) {
+            // Frosted glass: the blurred photo behind the section, like the Apps page.
+            BlurView glass = new BlurView(this, dp(look == Prefs.PILLS ? 28 : 12) + pad);
+            glass.letChildrenOut();
+            glass.setDarken(0.06f);
+            glass.setAmount(0f);
+            glass.setBackdropAlpha(Prefs.BLUR_ALPHA[prefs.blurLevel()]);
+            glass.setBackdrop(wallBlur);
+            sectionGlass.add(glass);
+            glass.addView(block, new FrameLayout.LayoutParams(-1, -2));
+            homeList.addView(glass, llp(-1, -2, -pad, -pad, -pad, -pad));
+        } else {
+            homeList.addView(block, llp(-1, -2, -pad, -pad, -pad, -pad));
         }
-        homeList.addView(block, llp(-1, -2, -pad, -pad, -pad, -pad));
-        LinearLayout row = null;
-        for (int i = 0; i < tiles.size(); i++) {
-            if (i % Prefs.COLUMNS == 0) {
-                row = new LinearLayout(this);
-                row.setClipChildren(false);
-                block.addView(row, llp(-2, -2, 0, i == 0 ? 0 : dp(GAP), 0, 0));
-            }
-            View card = tiles.get(i);
-            row.addView(card, llp(w, -2, i % Prefs.COLUMNS == 0 ? 0 : dp(GAP), 0, 0, 0));
+        for (int i = 0; i < items.size(); i++) {
+            View card = tileFor(items.get(i), kind, i);
             s.cards.add(card);
             cardPos.put(card, new int[]{index, i});
         }
+        switch (look) {
+            case Prefs.ROWS: block.addView(scrollRow(s)); break;
+            case Prefs.METRO: block.addView(metroWall(s, items, kind)); break;
+            default: grid(block, s); break;
+        }
+    }
+
+    /** One tile in the current layout. */
+    private View tileFor(Object item, int kind, int i) {
+        switch (look) {
+            case Prefs.PILLS: return pill(item);
+            case Prefs.METRO: return metroTile(item, metroSpan(item, kind, i));
+            default: return item instanceof App ? tile((App) item) : inputTile((Input) item);
+        }
+    }
+
+    // ---- Tiles and Pills: a plain grid
+
+    // Per icon size: tiny, small, medium, large.
+    private static final int[] TILE_COLS = {10, 8, 6, 5}, PILL_COLS = {7, 6, 5, 4}, PILL_H = {40, 48, 56, 66};
+
+    private void grid(LinearLayout block, Section s) {
+        boolean pills = look == Prefs.PILLS;
+        int cols = (pills ? PILL_COLS : TILE_COLS)[size];
+        int gap = dp(pills ? 12 : prefs.tileGapX()), down = dp(pills ? 12 : prefs.tileGapY());
+        int w = (availWidth() - (cols - 1) * gap) / cols, h = pills ? dp(PILL_H[size]) : -2;
+        s.cols = cols;
+        LinearLayout row = null;
+        for (int i = 0; i < s.cards.size(); i++) {
+            if (i % cols == 0) {
+                row = new LinearLayout(this);
+                row.setClipChildren(false);
+                block.addView(row, llp(-2, -2, 0, i == 0 ? 0 : down, 0, 0));
+            }
+            row.addView(s.cards.get(i), llp(w, h, i % cols == 0 ? 0 : gap, 0, 0, 0));
+        }
+    }
+
+    /**
+     * A capsule: the app's round icon and its name on light frosted glass, a gentle blur of the photo
+     * under a faint white, so bright spots behind the name soften. Focus turns it white.
+     */
+    final class Pill extends BlurView {
+        final GradientDrawable bg = new GradientDrawable();
+        final LinearLayout row = new LinearLayout(MainActivity.this);
+        final ImageView icon = new ImageView(MainActivity.this);
+        final TextView name;
+        final boolean tint;
+
+        Pill(Drawable d, boolean tint, String label) {
+            super(MainActivity.this, dp(PILL_H[size] / 2f));
+            this.tint = tint;
+            int h = PILL_H[size], s = h - 16;
+            setTint(0x2EFFFFFF);
+            setBackdropAlpha(150);
+            setBackdrop(wallBlur);
+            sectionGlass.add(this);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setPadding(dp(8), 0, dp(18), 0);
+            bg.setCornerRadius(dp(h / 2f));
+            row.setBackground(bg);
+            icon.setImageDrawable(d);
+            if (tint) {
+                int p = dp(s / 5f);
+                icon.setPadding(p, p, p, p);
+            } else {
+                icon.setScaleType(ImageView.ScaleType.CENTER_CROP);
+                icon.setClipToOutline(true);
+                icon.setOutlineProvider(oval());
+            }
+            row.addView(icon, llp(dp(s), dp(s), 0, 0, dp(12), 0));
+            name = Ui.text(MainActivity.this, 12 + size, 600, Ui.TEXT);
+            name.setText(label);
+            name.setEllipsize(TextUtils.TruncateAt.END);
+            row.addView(name, new LinearLayout.LayoutParams(0, -2, 1f));
+            addView(row, new FrameLayout.LayoutParams(-1, -1));
+            paint(false);
+        }
+
+        void paint(boolean on) {
+            // A faint edge keeps the capsule's shape on dark photos; focus fills it white.
+            bg.setColor(on ? 0xF2FFFFFF : Color.TRANSPARENT);
+            bg.setStroke(on ? 0 : Math.max(1, dp(0.75f)), 0x33FFFFFF);
+            name.setTextColor(on ? 0xFF111111 : Ui.TEXT);
+            // A soft shadow so a white name still reads where the photo behind it is white too.
+            name.setShadowLayer(on ? 0 : dp(6), 0, on ? 0 : dp(1), 0x99000000);
+            if (tint) icon.setImageTintList(ColorStateList.valueOf(on ? 0xFF111111 : Ui.TEXT));
+        }
+    }
+
+    private View pill(Object item) {
+        Pill p;
+        if (item instanceof App) {
+            App a = (App) item;
+            p = new Pill(a.icon, false, a.label);
+            p.setOnClickListener(v -> launchApp(a));
+        } else {
+            Input in = (Input) item;
+            p = new Pill(getDrawable(in.id == null ? R.drawable.ic_home : R.drawable.ic_input), true, in.label);
+            p.setOnClickListener(v -> switchInput(in));
+        }
+        p.setTag(item);
+        p.setId(View.generateViewId());
+        p.setFocusable(true);
+        addFocus(p);
+        return p;
+    }
+
+    // ---- Rows: one row per section that scrolls sideways, like a streaming app
+
+    private static final float[] ROW_VISIBLE = {9f, 7f, 5.5f, 4.5f};
+
+    private View scrollRow(Section s) {
+        s.cols = s.cards.size();
+        int gap = dp(GAP * 2), w = Math.round((availWidth() - (ROW_VISIBLE[size] - 1) * gap) / ROW_VISIBLE[size]);
+        HorizontalScrollView sv = new HorizontalScrollView(this) {
+            // We scroll to the focused tile ourselves, with room for it to grow.
+            @Override protected int computeScrollDeltaToGetChildRectOnScreen(android.graphics.Rect r) { return 0; }
+        };
+        sv.setHorizontalScrollBarEnabled(false);
+        sv.setOverScrollMode(View.OVER_SCROLL_NEVER);
+        sv.setClipChildren(false);
+        sv.setClipToPadding(false);
+        LinearLayout row = new LinearLayout(this);
+        row.setClipChildren(false);
+        row.setClipToPadding(false);
+        for (int i = 0; i < s.cards.size(); i++) row.addView(s.cards.get(i), llp(w, -2, i == 0 ? 0 : gap, 0, 0, 0));
+        sv.addView(row, new FrameLayout.LayoutParams(-2, -2));
+        return sv;
+    }
+
+    private void scrollRowTo(View card) {
+        if (!(card.getParent() instanceof LinearLayout)) return;
+        View p = (View) card.getParent().getParent();
+        if (!(p instanceof HorizontalScrollView)) return;
+        HorizontalScrollView sv = (HorizontalScrollView) p;
+        int margin = dp(48), x = sv.getScrollX(), w = sv.getWidth();
+        if (card.getLeft() - margin < x) sv.smoothScrollTo(Math.max(0, card.getLeft() - margin), 0);
+        else if (card.getRight() + margin > x + w) sv.smoothScrollTo(card.getRight() + margin - w, 0);
+    }
+
+    // ---- Metro: flat coloured live tiles in mixed sizes, like Windows 8
+
+    private static final int[] METRO_COLS = {14, 12, 10, 8};
+    /** Tiles touch, as on the Windows 8 Start screen. */
+    private static final int METRO_GAP = 0;
+    private static final int[] METRO_COLOURS = {0xFF2D89EF, 0xFF00A300, 0xFFDA532C, 0xFF603CBA, 0xFFB91D47,
+            0xFF00ABA9, 0xFFE3A21A, 0xFF1E7145};
+    private final Map<String, Integer> accents = new HashMap<>();
+
+    private int metroCell() {
+        int cols = METRO_COLS[size];
+        return (availWidth() - (cols - 1) * dp(METRO_GAP)) / cols;
+    }
+
+    /** Columns × rows: the first of Your apps is large, apps with a banner are wide, the rest square. */
+    private static int[] metroSpan(Object item, int kind, int i) {
+        if (!(item instanceof App)) return new int[]{1, 1};
+        App a = (App) item;
+        if (kind == SEC_YOURS && i == 0) return new int[]{2, 2};
+        return a.isBanner ? new int[]{2, 1} : new int[]{1, 1};
+    }
+
+    private View metroTile(Object item, int[] span) {
+        int cell = metroCell(), gap = dp(METRO_GAP);
+        int w = span[0] * cell + (span[0] - 1) * gap, h = span[1] * cell + (span[1] - 1) * gap;
+        FrameLayout t = new FrameLayout(this);
+        t.setTag(item);
+        t.setTag(R.id.span, span);
+        t.setId(View.generateViewId());
+        t.setFocusable(true);
+        t.setClipToOutline(true);
+        t.setOutlineProvider(roundOutline(2));
+        t.setOutlineAmbientShadowColor(Color.TRANSPARENT);
+        t.setOutlineSpotShadowColor(Color.TRANSPARENT);
+        String label;
+        if (item instanceof App) {
+            App a = (App) item;
+            label = a.label;
+            t.setBackgroundColor(accent(a));
+            if (a.isBanner && span[0] == 2) {
+                ImageView img = new ImageView(this);
+                img.setImageDrawable(a.art);
+                img.setScaleType(ImageView.ScaleType.CENTER_CROP);
+                t.addView(img, new FrameLayout.LayoutParams(-1, -1));
+                label = null;
+            } else {
+                ImageView img = new ImageView(this);
+                img.setImageDrawable(a.icon);
+                int s = Math.min(w, h) * 2 / 5;
+                t.addView(img, new FrameLayout.LayoutParams(s, s, Gravity.CENTER));
+            }
+            t.setOnClickListener(v -> launchApp(a));
+        } else {
+            Input in = (Input) item;
+            label = in.label;
+            t.setBackgroundColor(METRO_COLOURS[3]);
+            ImageView img = new ImageView(this);
+            img.setImageResource(in.id == null ? R.drawable.ic_home : R.drawable.ic_input);
+            img.setImageTintList(ColorStateList.valueOf(Ui.TEXT));
+            int s = Math.min(w, h) / 3;
+            t.addView(img, new FrameLayout.LayoutParams(s, s, Gravity.CENTER));
+            t.setOnClickListener(v -> switchInput(in));
+        }
+        if (label != null && cell >= dp(64)) {
+            TextView name = Ui.text(this, 10 + size, 500, Ui.TEXT);
+            name.setText(label);
+            name.setEllipsize(TextUtils.TruncateAt.END);
+            t.addView(name, lp(-1, -2, Gravity.BOTTOM | Gravity.START, dp(8), 0, dp(8), dp(6)));
+        }
+        addFocus(t);
+        return t;
+    }
+
+    /** Packs tiles left to right, top to bottom, each into the first gap it fits, like the Start screen. */
+    private View metroWall(Section s, List<?> items, int kind) {
+        s.spatial = true;
+        int cols = METRO_COLS[size], cell = metroCell(), gap = dp(METRO_GAP), step = cell + gap;
+        List<boolean[]> used = new ArrayList<>();
+        FrameLayout box = new FrameLayout(this);
+        box.setClipChildren(false);
+        int bottom = 0;
+        for (View t : s.cards) {
+            int[] span = (int[]) t.getTag(R.id.span);
+            int r = 0, c = 0;
+            search:
+            for (r = 0; ; r++) {
+                for (c = 0; c + span[0] <= cols; c++) if (fits(used, r, c, span, cols)) break search;
+            }
+            for (int y = r; y < r + span[1]; y++) {
+                while (used.size() <= y) used.add(new boolean[cols]);
+                for (int x = c; x < c + span[0]; x++) used.get(y)[x] = true;
+            }
+            FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
+                    span[0] * cell + (span[0] - 1) * gap, span[1] * cell + (span[1] - 1) * gap);
+            lp.leftMargin = c * step;
+            lp.topMargin = r * step;
+            box.addView(t, lp);
+            bottom = Math.max(bottom, lp.topMargin + lp.height);
+        }
+        box.setMinimumHeight(bottom);
+        return box;
+    }
+
+    private static boolean fits(List<boolean[]> used, int r, int c, int[] span, int cols) {
+        for (int y = r; y < r + span[1]; y++) {
+            if (y >= used.size()) continue;
+            for (int x = c; x < c + span[0]; x++) if (x >= cols || used.get(y)[x]) return false;
+        }
+        return true;
+    }
+
+    /** A solid colour from the app's icon, deep enough for white text; a Metro colour if it's grey. */
+    private int accent(App a) {
+        Integer known = accents.get(a.pkg);
+        if (known != null) return known;
+        int colour = METRO_COLOURS[Math.floorMod(a.pkg.hashCode(), METRO_COLOURS.length)];
+        try {
+            Bitmap b = Bitmap.createBitmap(12, 12, Bitmap.Config.ARGB_8888);
+            Drawable d = a.icon.getConstantState() != null ? a.icon.getConstantState().newDrawable().mutate() : a.icon;
+            d.setBounds(0, 0, 12, 12);
+            d.draw(new Canvas(b));
+            long r = 0, g = 0, bl = 0, n = 0;
+            float[] hsv = new float[3];
+            for (int y = 0; y < 12; y++) for (int x = 0; x < 12; x++) {
+                int p = b.getPixel(x, y);
+                if (Color.alpha(p) < 200) continue;
+                Color.colorToHSV(p, hsv);
+                if (hsv[1] < 0.25f || hsv[2] < 0.15f) continue;
+                r += Color.red(p); g += Color.green(p); bl += Color.blue(p); n++;
+            }
+            if (n >= 6) {
+                Color.colorToHSV(Color.rgb((int) (r / n), (int) (g / n), (int) (bl / n)), hsv);
+                hsv[1] = Math.max(hsv[1], 0.55f);
+                hsv[2] = Math.max(0.45f, Math.min(hsv[2], 0.72f));
+                colour = Color.HSVToColor(hsv);
+            }
+        } catch (RuntimeException ignored) { }
+        accents.put(a.pkg, colour);
+        return colour;
+    }
+
+    private Drawable metroBorder() {
+        GradientDrawable g = new GradientDrawable();
+        g.setCornerRadius(dp(2));
+        g.setStroke(dp(2), Ui.TEXT);
+        return g;
+    }
+
+    // ---- Dock: Your apps in a glass bar at the foot of the screen, magnifying like the macOS Dock
+
+    private static final int[] DOCK = {44, 56, 72, 88};
+    private LinearLayout dockRow;
+    private TextView dockLabel;
+
+    private FrameLayout dockStrip;
+    private LinearLayout dockDots;
+    private int dockPerPage = 1, dockPageW, dockPage;
+
+    /**
+     * Your apps in a glass bar at the foot of the screen, at the icon size you chose. Whatever doesn't
+     * fit goes on the next page of the dock: moving past the last icon slides the next page in, and
+     * dots under the bar show which page you're on.
+     */
+    private void fillDock(List<App> yours) {
+        Section s = new Section(SEC_YOURS);
+        sections.add(s);
+        int gap = dp(10), pad = dp(10), d = dp(DOCK[prefs.dockSize()]), n = yours.size();
+        // Each page has a margin on both sides for its end icons to grow into.
+        int m = d * 2 / 5, room = availWidth() - 2 * pad - dp(24);
+        dockPerPage = Math.max(1, Math.min(n, (room - 2 * m + gap) / (d + gap)));
+        int pages = Math.max(1, (n + dockPerPage - 1) / dockPerPage);
+        dockPageW = 2 * m + dockPerPage * d + (dockPerPage - 1) * gap;
+        dockPage = 0;
+        int boxH = Math.round(d * 1.55f) + dp(44) + 2 * pad + (pages > 1 ? dp(16) : 0);
+
+        int screenH = getResources().getDisplayMetrics().heightPixels;
+        homeList.addView(new View(this), new LinearLayout.LayoutParams(1, Math.max(0, screenH - dp(BAR_H) - dp(56) - boxH)));
+        FrameLayout box = new FrameLayout(this);
+        box.setClipChildren(false);
+
+        // The bar is one page wide; the strip of every page slides behind it, clipped at its sides only.
+        FrameLayout bar = new FrameLayout(this) {
+            @Override protected void dispatchDraw(Canvas c) {
+                c.save();
+                c.clipRect(getPaddingLeft(), -getHeight(), getWidth() - getPaddingRight(), getHeight() * 2);
+                super.dispatchDraw(c);
+                c.restore();
+            }
+        };
+        bar.setClipChildren(false);
+        bar.setClipToPadding(false);
+        bar.setPadding(pad, pad, pad, pad);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setCornerRadius(dp(22));
+        bg.setColor(0x38FFFFFF);
+        bg.setStroke(Math.max(1, dp(0.75f)), 0x40FFFFFF);
+        bar.setBackground(bg);
+        dockStrip = new FrameLayout(this);
+        dockStrip.setClipChildren(false);
+        dockRow = new LinearLayout(this);
+        dockRow.setGravity(Gravity.BOTTOM);
+        dockRow.setClipChildren(false);
+        int i = 0;
+        for (App a : yours) {
+            View icon = dockIcon(a, d);
+            int col = i % dockPerPage;
+            int left = col == 0 ? (i == 0 ? m : 2 * m) : gap;
+            dockRow.addView(icon, llp(d, d, left, 0, 0, 0));
+            s.cards.add(icon);
+            cardPos.put(icon, new int[]{0, i++});
+        }
+        dockStrip.addView(dockRow, new FrameLayout.LayoutParams(-2, d));
+        bar.addView(dockStrip, new FrameLayout.LayoutParams(dockPageW, d));
+        s.cols = s.cards.size();
+
+        dockLabel = Ui.text(this, 13, 600, 0xFF111111);
+        dockLabel.setPadding(dp(10), dp(5), dp(10), dp(5));
+        GradientDrawable lb = new GradientDrawable();
+        lb.setCornerRadius(dp(8));
+        lb.setColor(0xF2FFFFFF);
+        dockLabel.setBackground(lb);
+        dockLabel.setAlpha(0f);
+        box.addView(dockLabel, new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.START));
+        box.addView(bar, lp(-2, -2, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL, 0, 0, 0, pages > 1 ? dp(16) : 0));
+        dockDots = new LinearLayout(this);
+        if (pages > 1) {
+            for (int k = 0; k < pages; k++) {
+                View dot = new View(this);
+                GradientDrawable g = new GradientDrawable();
+                g.setShape(GradientDrawable.OVAL);
+                dot.setBackground(g);
+                dockDots.addView(dot, llp(dp(6), dp(6), k == 0 ? 0 : dp(7), 0, 0, 0));
+            }
+            box.addView(dockDots, new FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL));
+            paintDockDots();
+        }
+        homeList.addView(box, new LinearLayout.LayoutParams(-1, boxH));
+    }
+
+    private void paintDockDots() {
+        for (int k = 0; k < dockDots.getChildCount(); k++) {
+            ((GradientDrawable) dockDots.getChildAt(k).getBackground()).setColor(k == dockPage ? Ui.TEXT : 0x66FFFFFF);
+        }
+    }
+
+    private View dockIcon(App app, int px) {
+        FrameLayout c = new FrameLayout(this);
+        c.setTag(app);
+        c.setId(View.generateViewId());
+        c.setFocusable(true);
+        c.setClipToOutline(true);
+        float r = px * 0.225f / getResources().getDisplayMetrics().density;
+        c.setOutlineProvider(roundOutline(r));
+        c.setOutlineAmbientShadowColor(Color.TRANSPARENT);
+        c.setOutlineSpotShadowColor(Color.TRANSPARENT);
+        ImageView img = new ImageView(this);
+        img.setImageDrawable(app.icon);
+        c.setBackgroundColor(0xFF1C1C1E);
+        img.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        c.addView(img, new FrameLayout.LayoutParams(-1, -1));
+        c.setContentDescription(app.label);
+        c.setOnClickListener(v -> launchApp(app));
+        addFocus(c);
+        return c;
+    }
+
+    /** The focused icon and its neighbours grow from the bottom and push the rest aside. */
+    private void dockFocus(View v, boolean has) {
+        if (dockRow == null) return;
+        if (!has) {
+            handler.post(() -> {
+                View f = getCurrentFocus();
+                if (f != null && f.getParent() == dockRow) return;
+                for (int k = 0; k < dockRow.getChildCount(); k++) {
+                    View c = dockRow.getChildAt(k);
+                    c.animate().scaleX(1f).scaleY(1f).translationX(0).setInterpolator(Ui.EASE).setDuration(200).start();
+                }
+                dockLabel.animate().alpha(0f).setDuration(120).start();
+            });
+            return;
+        }
+        // Focused before its first layout (a cold start): try again once the icons have a size.
+        if (v.getWidth() == 0) { v.post(() -> { if (v.hasFocus()) dockFocus(v, true); }); return; }
+        int f = dockRow.indexOfChild(v), n = dockRow.getChildCount();
+        int pageNow = f / dockPerPage;
+        if (pageNow != dockPage) {
+            dockPage = pageNow;
+            dockStrip.animate().translationX(-dockPage * dockPageW).setInterpolator(Ui.EASE).setDuration(320).start();
+            paintDockDots();
+        }
+        float[] scale = new float[n], extra = new float[n];
+        for (int k = 0; k < n; k++) {
+            View c = dockRow.getChildAt(k);
+            int d = Math.abs(k - f);
+            scale[k] = d == 0 ? 1.35f : d == 1 ? 1.15f : d == 2 ? 1.05f : 1f;
+            extra[k] = (scale[k] - 1f) * c.getWidth();
+        }
+        for (int k = 0; k < n; k++) {
+            View c = dockRow.getChildAt(k);
+            float tx = 0;
+            if (k != f) {
+                tx = extra[f] / 2 + extra[k] / 2;
+                for (int j = Math.min(k, f) + 1; j < Math.max(k, f); j++) tx += extra[j];
+                if (k < f) tx = -tx;
+            }
+            c.setPivotX(c.getWidth() / 2f);
+            c.setPivotY(c.getHeight());
+            c.animate().scaleX(scale[k]).scaleY(scale[k]).translationX(tx).setInterpolator(Ui.EASE).setDuration(240).start();
+        }
+        dockLabel.setText(v.getContentDescription());
+        dockLabel.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
+        // From the bar's place in the dock box, where the strip is heading, and the icon in the strip.
+        View bar = (View) dockStrip.getParent();
+        float cx = bar.getLeft() + bar.getPaddingLeft() - dockPage * dockPageW + v.getLeft() + v.getWidth() / 2f;
+        float top = bar.getTop() + bar.getPaddingTop() + v.getBottom() - v.getHeight() * scale[f];
+        dockLabel.setTranslationX(cx - dockLabel.getMeasuredWidth() / 2f);
+        dockLabel.setTranslationY(top - dockLabel.getMeasuredHeight() - dp(10));
+        dockLabel.animate().alpha(1f).setDuration(160).start();
+    }
+
+    // ---- shared by the layouts
+
+    private Section sectionOf(View v) {
+        int[] pos = cardPos.get(v);
+        return pos == null ? null : sections.get(pos[0]);
+    }
+
+    private void scaleTo(View v, float scale) {
+        if (scale == 1f) v.setTranslationZ(0);
+        v.animate().scaleX(scale).scaleY(scale).setInterpolator(Ui.EASE).setDuration(220).withLayer().start();
+    }
+
+    /** Centre of a tile in Home's coordinates, ignoring zoom but following sideways scrolling. */
+    private float[] centre(View v) {
+        android.graphics.Rect r = new android.graphics.Rect(0, 0, v.getWidth(), v.getHeight());
+        homeList.offsetDescendantRectToMyCoords(v, r);
+        return new float[]{r.exactCenterX(), r.exactCenterY()};
+    }
+
+    private ViewOutlineProvider oval() {
+        return new ViewOutlineProvider() {
+            @Override public void getOutline(View v, Outline o) { o.setOval(0, 0, v.getWidth(), v.getHeight()); }
+        };
     }
 
     private FrameLayout card() {
@@ -716,18 +1264,29 @@ public class MainActivity extends Activity {
     }
 
     /** Focus: the tile zooms and the rest of its section dims; keeps its row in view. */
-    private void addFocus(FrameLayout card) {
+    private void addFocus(View card) {
         card.setOnFocusChangeListener((v, has) -> {
-            magnifyRow(v, has);
+            switch (look) {
+                case Prefs.DOCK:
+                    if (v.getParent() == dockRow) dockFocus(v, has); else magnifyRow(v, has, FOCUS_SCALE);
+                    break;
+                case Prefs.PILLS: ((Pill) v).paint(has); magnifyRow(v, has, 1.06f); break;
+                case Prefs.METRO: v.setForeground(has ? metroBorder() : null); magnifyRow(v, has, 1.05f); break;
+                default: magnifyRow(v, has, FOCUS_SCALE); break;
+            }
             // Focus left the tiles (menu bar, a panel): bring every section back to full brightness.
             if (!has) handler.post(() -> { if (!cardPos.containsKey(getCurrentFocus())) spotlight(null); });
             else spotlight(v);
             if (!has) return;
             int[] pos = cardPos.get(v);
             lastPos = pos;
+            // The dock sits at the foot of the first screen; going back up to it shows that screen again.
+            if (look == Prefs.DOCK && v.getParent() == dockRow) { homeScroll.smoothScrollTo(0, 0); return; }
+            if (look == Prefs.ROWS) scrollRowTo(v);
             // The first row of Your apps keeps the photo in view; anything lower scrolls up.
-            if (pos != null && pos[0] == 0 && pos[1] < Prefs.COLUMNS) homeScroll.smoothScrollTo(0, 0);
-            else ensureVisible(homeScroll, (View) v.getParent(), dp(64));
+            View first = firstCard();
+            if (pos != null && pos[0] == 0 && first != null && centre(v)[1] - centre(first)[1] < dp(8)) homeScroll.smoothScrollTo(0, 0);
+            else ensureVisible(homeScroll, look == Prefs.ROWS || look == Prefs.METRO ? v : (View) v.getParent(), dp(64));
         });
     }
 
@@ -746,9 +1305,9 @@ public class MainActivity extends Activity {
     }
 
     /** Only the selected tile grows, drawn above its neighbours; nothing else moves. */
-    private void magnifyRow(View v, boolean has) {
+    private void magnifyRow(View v, boolean has, float focusScale) {
         v.setTranslationZ(has ? 2 : 0);
-        float scale = has ? FOCUS_SCALE : 1f;
+        float scale = has ? focusScale : 1f;
         v.animate().scaleX(scale).scaleY(scale).setInterpolator(Ui.EASE).setDuration(has ? 260 : 200).withLayer().start();
     }
 
@@ -1022,13 +1581,16 @@ public class MainActivity extends Activity {
         int top = topItems.indexOf(f);
         if (top >= 0) {
             switch (code) {
-                case KeyEvent.KEYCODE_DPAD_LEFT: if (top > 0) topItems.get(top - 1).requestFocus(); return true;
-                case KeyEvent.KEYCODE_DPAD_RIGHT: if (top < topItems.size() - 1) topItems.get(top + 1).requestFocus(); return true;
+                case KeyEvent.KEYCODE_DPAD_LEFT: focusTopItem(top, -1); return true;
+                case KeyEvent.KEYCODE_DPAD_RIGHT: focusTopItem(top, 1); return true;
                 case KeyEvent.KEYCODE_DPAD_DOWN: showPage(f == appsTab ? 1 : 0); focusContent(); return true;
                 case KeyEvent.KEYCODE_DPAD_UP: return true;
             }
         }
-        if (onCard) { moveOnHome(f, code); return true; }
+        if (onCard) {
+            if (sectionOf(f).spatial) moveSpatial(f, code); else moveOnHome(f, code);
+            return true;
+        }
         if (row >= 0) { moveInLibrary(row, code); return true; }
         return super.dispatchKeyEvent(e);
     }
@@ -1037,7 +1599,7 @@ public class MainActivity extends Activity {
     private void moveOnHome(View f, int code) {
         int[] pos = cardPos.get(f);
         List<View> s = sections.get(pos[0]).cards;
-        int i = pos[1], n = s.size(), cols = Prefs.COLUMNS, col = i % cols;
+        int i = pos[1], n = s.size(), cols = sections.get(pos[0]).cols, col = i % cols;
         View target = null;
         switch (code) {
             case KeyEvent.KEYCODE_DPAD_LEFT: if (col > 0) target = s.get(i - 1); break;
@@ -1062,6 +1624,42 @@ public class MainActivity extends Activity {
                 break;
         }
         if (target != null) target.requestFocus();
+    }
+
+    /**
+     * To the nearest tile in that direction, for layouts without even columns. It looks within 45° of
+     * the direction first; going up or down it then looks anywhere above or below. Up from the top
+     * row goes to the menu bar.
+     */
+    private void moveSpatial(View f, int code) {
+        boolean vertical = code == KeyEvent.KEYCODE_DPAD_UP || code == KeyEvent.KEYCODE_DPAD_DOWN;
+        if (!vertical && code != KeyEvent.KEYCODE_DPAD_LEFT && code != KeyEvent.KEYCODE_DPAD_RIGHT) return;
+        float[] a = centre(f);
+        View target = null;
+        for (int pass = 0; pass < 2 && target == null; pass++) {
+            float best = Float.MAX_VALUE;
+            for (Section s : sections) for (View c : s.cards) {
+                if (c == f) continue;
+                float[] b = centre(c);
+                float dx = b[0] - a[0], dy = b[1] - a[1];
+                float along = code == KeyEvent.KEYCODE_DPAD_LEFT ? -dx : code == KeyEvent.KEYCODE_DPAD_RIGHT ? dx
+                        : code == KeyEvent.KEYCODE_DPAD_UP ? -dy : dy;
+                float across = Math.abs(vertical ? dx : dy);
+                if (along < dp(4) || pass == 0 && across > along) continue;
+                float score = along + 2 * across;
+                if (score < best) { best = score; target = c; }
+            }
+            if (!vertical) break;
+        }
+        if (target != null) target.requestFocus();
+        else if (code == KeyEvent.KEYCODE_DPAD_UP) homeTab.requestFocus();
+    }
+
+    /** The next menu-bar item that's showing (the update chip is only there when there's an update). */
+    private void focusTopItem(int from, int dir) {
+        for (int i = from + dir; i >= 0 && i < topItems.size(); i += dir) {
+            if (topItems.get(i).getVisibility() == View.VISIBLE) { topItems.get(i).requestFocus(); return; }
+        }
     }
 
     /** Up/Down move a row; Left/Right jump to the previous/next letter. */
@@ -1518,15 +2116,67 @@ public class MainActivity extends Activity {
         openPanel("settings", settingsBtn, 380, this::fillSettings);
     }
 
+    /** One row per page, each with what it's set to now. */
     private void fillSettings(Panel p) {
         p.header("Settings", null);
         p.row(R.drawable.ic_settings, "TV settings", null, R.drawable.ic_chevron,
                 () -> { closePanel(false); launch(new Intent(Settings.ACTION_SETTINGS)); });
+        p.gap();
+        p.row(R.drawable.ic_grid, "Look", Prefs.LAYOUTS[prefs.layout()] + " · " + Prefs.SIZES[prefs.iconSize()],
+                R.drawable.ic_chevron, () -> openPage("look", this::fillLook));
+        p.row(R.drawable.ic_w_sun, "Wallpaper", Prefs.WALL_STYLES[prefs.wallStyle()], R.drawable.ic_chevron,
+                () -> openPage("wallpaper", this::fillWallpaper));
+        p.row(R.drawable.ic_w_moon, "World clock", prefs.cityName(0), R.drawable.ic_chevron,
+                () -> openPage("clock", this::fillClock));
+        p.row(R.drawable.ic_update, "Updates", updateSummary(), R.drawable.ic_chevron,
+                () -> openPage("updates", this::fillUpdates));
+        p.row(R.drawable.ic_lock, "Permissions", setupComplete() ? "All set" : "Needs attention", R.drawable.ic_chevron,
+                this::openSetup);
+        p.row(R.drawable.ic_info, "About", null, R.drawable.ic_chevron, this::openAbout);
+    }
 
-        p.section("Look");
-        p.toggle("Section background", prefs::sectionWrap, v -> { prefs.setSectionWrap(v); buildPages(); focusContent(); });
+    private void openPage(String kind, Consumer<Panel> fill) {
+        openPanel(kind, settingsBtn, 380, p -> {
+            fill.accept(p);
+            p.gap();
+            p.row(0, "Back to Settings", null, R.drawable.ic_chevron, this::openSettings);
+        });
+    }
 
-        p.section("Wallpaper");
+    private void fillLook(Panel p) {
+        p.header("Look", null);
+        p.value("Layout", () -> Prefs.LAYOUTS[prefs.layout()], d -> {
+            prefs.setLayout(prefs.layout() + d);
+            relayout();
+            // The spacing rows are only there for Tiles.
+            if (panel != null && "look".equals(panel.kind)) panel.refill();
+        });
+        if (prefs.layout() == Prefs.DOCK) p.value("Dock size", () -> Prefs.SIZES[prefs.dockSize()],
+                d -> { prefs.setDockSize(prefs.dockSize() + d); relayout(); });
+        p.value(prefs.layout() == Prefs.DOCK ? "Icon size below" : "Icon size", () -> Prefs.SIZES[prefs.iconSize()], d -> {
+            prefs.setIconSize(prefs.iconSize() + d);
+            relayout();
+            // In Dock these tiles are under the fold; bring them up so the change shows.
+            if (look == Prefs.DOCK) showSection(SEC_OTHER);
+        });
+        if (prefs.layout() == Prefs.TILES) {
+            p.value("Spacing across", () -> prefs.tileGapX() + " dp",
+                    d -> { prefs.setTileGapX(Prefs.nextOf(Prefs.TILE_GAPS, prefs.tileGapX(), d)); relayout(); });
+            p.value("Spacing down", () -> prefs.tileGapY() + " dp",
+                    d -> { prefs.setTileGapY(Prefs.nextOf(Prefs.TILE_GAPS, prefs.tileGapY(), d)); relayout(); });
+        }
+        if (prefs.hasSectionBackground()) p.toggle("Section background", prefs::sectionWrap, v -> {
+            prefs.setSectionWrap(v);
+            relayout();
+            // The blur level row is only there while the background is on.
+            if (panel != null && "look".equals(panel.kind)) panel.refill();
+        });
+        if (prefs.hasSectionBackground() && prefs.sectionWrap()) p.value("Background blur", () -> Prefs.BLUR_LEVELS[prefs.blurLevel()],
+                d -> { prefs.setBlurLevel(prefs.blurLevel() + d); relayout(); });
+    }
+
+    private void fillWallpaper(Panel p) {
+        p.header("Wallpaper", null);
         p.value("Style", () -> Prefs.WALL_STYLES[prefs.wallStyle()], d -> {
             prefs.setWallStyle(prefs.wallStyle() + d);
             rotate.run();
@@ -1536,13 +2186,67 @@ public class MainActivity extends Activity {
                 d -> { prefs.setWallMinutes(Prefs.nextOf(Prefs.WALL_MINUTES, prefs.wallMinutes(), d)); scheduleRotation(); });
         p.row(0, "Next photo", walls.describe(), 0, () -> rotate.run());
         p.row(0, "Get new photos", null, 0, () -> walls.refreshIfDue(true, rotate::run));
+    }
 
-        p.section("World clock");
+    private void fillClock(Panel p) {
+        p.header("World clock", null);
         p.value("City", () -> prefs.cityName(0), d -> { prefs.stepCity(0, d); applyClocks(); refreshWeather(true); });
+    }
 
-        p.gap();
-        p.row(0, "Permissions", setupComplete() ? "All set" : "Needs attention", R.drawable.ic_chevron, this::openSetup);
-        p.row(R.drawable.ic_info, "About", null, R.drawable.ic_chevron, this::openAbout);
+    private String updateSummary() {
+        switch (updater.state()) {
+            case CHECKING: return "Checking…";
+            case DOWNLOADING: return "Downloading " + updater.progress() + "%";
+            case READY: return updater.latest() + " ready";
+            case FAILED: return updater.error();
+            default: return "Version " + updater.installed();
+        }
+    }
+
+    /** Version, a manual check, and installing what's been found. Refilled as the updater moves along. */
+    private void fillUpdates(Panel p) {
+        p.header("Updates", "Version " + updater.installed());
+        Updater.State st = updater.state();
+        String status;
+        switch (st) {
+            case CHECKING: status = "Checking GitHub…"; break;
+            case UP_TO_DATE: status = "Up to date"; break;
+            case DOWNLOADING: status = "Downloading " + updater.latest() + " · " + updater.progress() + "%"; break;
+            case READY: status = updater.latest() + " is ready to install"; break;
+            case FAILED: status = updater.error(); break;
+            default: status = updater.latest() != null && Updater.isNewer(updater.latest(), updater.installed())
+                    ? updater.latest() + " is available" : "Not checked yet";
+        }
+        p.row(0, "Status", status, 0, null);
+        if (st == Updater.State.READY || st == Updater.State.IDLE && updater.latest() != null
+                && Updater.isNewer(updater.latest(), updater.installed())) {
+            p.row(R.drawable.ic_update, "Download and install " + updater.latest(), null, R.drawable.ic_chevron,
+                    () -> { closePanel(false); installUpdate(); });
+        }
+        p.row(0, "Check for updates", null, 0, () -> updater.check(true));
+        p.toggle("Download updates automatically", updater::autoDownload, updater::setAutoDownload);
+        if (!updater.canInstall()) p.row(0, "Allow installing updates", "Allow", R.drawable.ic_chevron,
+                () -> launch(updater.installPermissionScreen()));
+        p.note("New versions come from github.com/" + Updater.REPO + ". The TV asks you to confirm before it installs one.");
+    }
+
+    /** Rebuilds Home in the new layout behind the open Settings panel, back at the top. */
+    private void relayout() {
+        lastPos = null;
+        dockRow = null;
+        buildPages();
+        homeScroll.scrollTo(0, 0);
+    }
+
+    /** Scrolls Home so a section's first row sits in view, once it has been laid out. */
+    private void showSection(int kind) {
+        homeList.post(() -> {
+            for (Section s : sections) {
+                if (s.kind != kind || s.cards.isEmpty()) continue;
+                homeScroll.smoothScrollTo(0, Math.max(0, Math.round(centre(s.cards.get(0))[1]) - dp(220)));
+                return;
+            }
+        });
     }
 
     private void openAbout() {
@@ -1603,8 +2307,13 @@ public class MainActivity extends Activity {
         return r != null && getPackageName().equals(r.activityInfo.packageName);
     }
 
+    /** Home goes to BeeshTV: it's the Home app and, where Google TV would take it back, the guard is on. */
+    private boolean homeKept() {
+        return isHome() && (!HomeGuard.stockEnabled(this) || HomeGuard.enabled(this));
+    }
+
     private boolean setupComplete() {
-        return hasLocation() && locationOn() && notificationsAllowed() && isHome();
+        return hasLocation() && locationOn() && notificationsAllowed() && homeKept() && updater.canInstall();
     }
 
     private void openSetup() {
@@ -1627,8 +2336,18 @@ public class MainActivity extends Activity {
                 notes ? null : this::openListenerSettings);
         p.row(0, "Use as Home screen", home ? "Yes" : "Set", home ? R.drawable.ic_check : R.drawable.ic_chevron,
                 home ? null : this::requestHome);
-        if (!home) p.note("On Google TV the built-in home screen can keep the Home button. The README shows "
-                + "how to switch it off from a computer.");
+        if (HomeGuard.stockEnabled(this)) {
+            boolean guard = HomeGuard.enabled(this);
+            p.row(0, "Keep the Home button", guard ? "On" : "Turn on", guard ? R.drawable.ic_check : R.drawable.ic_chevron,
+                    guard ? null : this::openAccessibilitySettings);
+            if (!guard) p.note("Google TV takes the Home button back for its own home screen. In the list that "
+                    + "opens, choose " + getString(R.string.home_guard_label) + " and turn it on. If the TV says "
+                    + "the setting is restricted, open App info for BeeshTV, allow restricted settings, then try again.");
+        }
+        boolean installs = updater.canInstall();
+        p.row(0, "Install updates from GitHub", installs ? "Allowed" : "Allow", installs ? R.drawable.ic_check : R.drawable.ic_chevron,
+                installs ? null : () -> launch(updater.installPermissionScreen()));
+        p.row(R.drawable.ic_settings, "Open Launcher Settings", null, R.drawable.ic_chevron, this::openSettings);
         p.gap();
         p.row(0, "Done", null, 0, () -> closePanel(true));
     }
@@ -1639,6 +2358,10 @@ public class MainActivity extends Activity {
                 .putExtra("android.provider.extra.NOTIFICATION_LISTENER_COMPONENT_NAME", component);
         if (launch(detail) || launch(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))) return;
         launch(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + getPackageName())));
+    }
+
+    private void openAccessibilitySettings() {
+        if (!launch(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))) launch(new Intent(Settings.ACTION_SETTINGS));
     }
 
     private void requestHome() {
@@ -1860,6 +2583,8 @@ public class MainActivity extends Activity {
     }
 
     private void launchApp(App app) {
+        // BeeshTV's own tile: it's already open, so show setup instead.
+        if (getPackageName().equals(app.pkg)) { openSetup(); return; }
         launch(new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER)
                 .setComponent(app.component).addFlags(Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED));
     }

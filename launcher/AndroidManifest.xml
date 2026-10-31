@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.beeshtv.home"
-    android:versionCode="7"
-    android:versionName="1.0">
+    android:versionCode="9"
+    android:versionName="2.0">
 
     <!-- Wallpapers from wallhaven.cc and weather from open-meteo.com. -->
     <uses-permission android:name="android.permission.INTERNET" />
@@ -14,6 +14,8 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <!-- Uninstall from an app's menu (the system still asks to confirm). -->
     <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
+    <!-- Installs new releases from GitHub (the system still asks to confirm). -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- Bluetooth panel: paired devices and whether they are connected. -->
     <uses-permission android:name="android.permission.BLUETOOTH" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
@@ -31,6 +33,10 @@
         </intent>
         <package android:name="com.tcl.tv" />
         <package android:name="com.tcl.suspension" />
+        <!-- Stock home screens, to tell whether they'd take the Home button back (HomeGuard). -->
+        <package android:name="com.google.android.apps.tv.launcherx" />
+        <package android:name="com.google.android.tvlauncher" />
+        <package android:name="com.google.android.leanbacklauncher" />
     </queries>
 
     <application
@@ -58,6 +64,35 @@
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
+
+        <!-- An icon in the TV's app list, so a sideloaded APK can be opened to finish setup. -->
+        <activity-alias
+            android:name=".Setup"
+            android:targetActivity=".MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <!-- Keeps the Home button on BeeshTV while Google TV's own home screen is enabled. -->
+        <service
+            android:name=".HomeGuard"
+            android:label="@string/home_guard_label"
+            android:exported="true"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data android:name="android.accessibilityservice" android:resource="@xml/home_guard" />
+        </service>
+
+        <!-- The system installer's answer when an update is installed (see Updater). -->
+        <receiver
+            android:name=".Updater$InstallStatus"
+            android:exported="false" />
 
         <!-- Lists and clears notifications for the bell in the menu bar, once access is granted. -->
         <service
