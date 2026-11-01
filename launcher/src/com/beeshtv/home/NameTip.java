@@ -16,26 +16,27 @@ import android.widget.TextView;
 
 /**
  * The selected app's name in a small pill with a point underneath it, floating over the tile, as in the
- * macOS Dock. It's the launcher's own glass (BlurView's): the blurred photo, lined up with the screen,
- * under the same dark tint, with a faint edge. Home moves it along with the tile as it grows and slides.
+ * macOS Dock. It's the launcher's own glass, as on its panels: a blurred picture of the screen behind it,
+ * lined up with the screen, under the same light dark tint, with a faint edge. Home moves it along with
+ * the tile as it grows and slides.
  */
 final class NameTip extends TextView {
     private final Glass glass;
 
     NameTip(Context c) {
         super(c);
-        float point = Ui.dp(c, 5);
-        glass = new Glass(this, Ui.dp(c, 9), Ui.dp(c, 11), point, Math.max(1f, Ui.dp(c, 0.75f)));
+        float point = Ui.dp(c, 4);
+        glass = new Glass(this, Ui.dp(c, 7), Ui.dp(c, 9), point, Math.max(1f, Ui.dp(c, 0.75f)));
         setBackground(glass);
         setTypeface(Ui.face(c, 500));
-        setTextSize(12.5f);
+        setTextSize(10f);
         setTextColor(0xFFF2F2F7);
         setSingleLine(true);
         setGravity(Gravity.CENTER);
-        setPadding(Ui.dp(c, 11), Ui.dp(c, 5), Ui.dp(c, 11), Ui.dp(c, 6) + Math.round(point));
+        setPadding(Ui.dp(c, 8), Ui.dp(c, 3), Ui.dp(c, 8), Ui.dp(c, 4) + Math.round(point));
     }
 
-    /** The blurred photo behind Home, as the rest of the launcher's glass uses. */
+    /** A blurred picture of the screen (as a panel's), or of the photo until there is one. */
     void setBackdrop(Bitmap b) {
         glass.backdrop = b;
         invalidate();
@@ -57,8 +58,8 @@ final class NameTip extends TextView {
             this.radius = radius;
             this.pointW = pointW;
             this.pointH = pointH;
-            // BlurView's dark tint, a touch deeper since the glass holds text over busy tiles.
-            tint.setColor(0x6B000000);
+            // The panels' tint (BlurView at darken 0.30).
+            tint.setColor(0x4D000000);
             edge.setStyle(Paint.Style.STROKE);
             edge.setStrokeWidth(stroke);
             edge.setColor(0x33FFFFFF);

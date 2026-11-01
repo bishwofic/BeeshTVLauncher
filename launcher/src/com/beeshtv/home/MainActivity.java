@@ -1317,6 +1317,9 @@ public class MainActivity extends Activity {
         CharSequence name = t instanceof App ? ((App) t).label : t instanceof Input ? ((Input) t).label : v.getContentDescription();
         if (name == null) { showName(null); return; }
         nameTip.setText(name);
+        // Its glass: the screen behind it, once the tiles have stopped moving.
+        handler.removeCallbacks(frostName);
+        handler.postDelayed(frostName, 340);
         nameTip.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
         nameTip.layout(nameTip.getLeft(), nameTip.getTop(), nameTip.getLeft() + nameTip.getMeasuredWidth(),
                 nameTip.getTop() + nameTip.getMeasuredHeight());
@@ -1324,6 +1327,20 @@ public class MainActivity extends Activity {
         placeName();
         nameTip.animate().alpha(1f).setDuration(160).start();
     }
+
+    /**
+     * A blurred picture of the screen without the pill, the way a panel frosts what's behind it. Taken
+     * when focus has settled, not on every step of a held D-pad; until then the last one stands in.
+     */
+    private final Runnable frostName = () -> {
+        if (named == null || panel != null || nameTip == null || root.getWidth() == 0) return;
+        nameTip.setVisibility(View.INVISIBLE);
+        Bitmap shot = snapshot();
+        nameTip.setVisibility(View.VISIBLE);
+        Bitmap blurred = Ui.blur(shot, 0f);
+        shot.recycle();
+        nameTip.setBackdrop(blurred);
+    };
 
     /** Centred just above the tile as it looks this frame: grown, slid aside, scrolled. */
     private void placeName() {
