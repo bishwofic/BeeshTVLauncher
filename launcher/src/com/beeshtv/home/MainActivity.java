@@ -940,7 +940,7 @@ public class MainActivity extends Activity {
     /** Tiles touch, as on the Windows 8 Start screen. */
     private static final int METRO_GAP = 0;
     /** Tiles meet at nearly square corners; only the wall's own outer corners are rounded. */
-    private static final int METRO_RADIUS = 2, METRO_WALL_RADIUS = 14;
+    private static final int METRO_RADIUS = 2, METRO_WALL_RADIUS = 6;
     private static final int[] METRO_COLOURS = {0xFF2D89EF, 0xFF00A300, 0xFFDA532C, 0xFF603CBA, 0xFFB91D47,
             0xFF00ABA9, 0xFFE3A21A, 0xFF1E7145};
     private final Map<String, Integer> accents = new HashMap<>();
@@ -1569,17 +1569,11 @@ public class MainActivity extends Activity {
     }
 
     /**
-     * Metro: the focused tile grows and the tiles beside it, in its own band of the wall, slide left and
-     * right out of its way; everything above and below stays put.
+     * Metro: the focused tile grows over its neighbours and nothing else moves, so the wall stays tight,
+     * with no gaps opening up in it.
      */
     private void openMosaic(Section s, View v, float focusScale) {
-        float dx = (focusScale - 1f) * v.getWidth() / 2f;
-        for (View c : s.cards) {
-            if (c == v) { move(c, focusScale, 0f, 0f, 2); continue; }
-            boolean beside = c.getBottom() > v.getTop() && c.getTop() < v.getBottom();
-            float x = !beside ? 0f : c.getRight() <= v.getLeft() ? -dx : c.getLeft() >= v.getRight() ? dx : 0f;
-            move(c, 1f, x, 0f, 0);
-        }
+        for (View c : s.cards) move(c, c == v ? focusScale : 1f, 0f, 0f, c == v ? 2 : 0);
     }
 
     /** Everything in the section back to where it was. */
