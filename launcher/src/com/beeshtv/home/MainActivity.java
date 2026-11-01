@@ -1339,6 +1339,8 @@ public class MainActivity extends Activity {
         if (named == null || panel != null || nameTip == null || root.getWidth() == 0) return;
         int[] at = new int[2];
         nameTip.getLocationInWindow(at);
+        frostX = at[0];
+        frostY = at[1];
         // Room around it for the blur to draw from, and above for it to rise into as the tile grows.
         int pad = dp(12), rise = dp(20), x = at[0] - pad, y = at[1] - pad - rise;
         int w = nameTip.getWidth() + 2 * pad, h = nameTip.getHeight() + 2 * pad + rise;
@@ -1353,6 +1355,16 @@ public class MainActivity extends Activity {
         Ui.frost(shot, Math.max(1, dp(3)));
         nameTip.setBehind(shot, new android.graphics.RectF(x, y, x + w, y + h));
     };
+
+    /** Where the pill was (window pixels) when the picture behind it was taken. */
+    private int frostX, frostY;
+    private boolean refrostQueued;
+
+    /**
+     * The pill moved off the picture behind it (its tile sliding back into place, Home scrolling): take
+     * a new one on the next frame, so no part of it shows plain tint. Only while it's moving.
+     */
+    private final Runnable refrost = () -> { refrostQueued = false; frostName.run(); };
 
     /** Centred just above the tile as it looks this frame: grown, slid aside, scrolled. */
     private void placeName() {
@@ -1370,6 +1382,11 @@ public class MainActivity extends Activity {
         nameTip.setTranslationY(y);
         // The glass shows the photo behind wherever it now is.
         nameTip.invalidate();
+        float sx = box[0] + x, sy = box[1] + y;
+        if (!refrostQueued && (Math.abs(sx - frostX) > dp(4) || Math.abs(sy - frostY) > dp(4))) {
+            refrostQueued = true;
+            handler.post(refrost);
+        }
     }
 
     /** How dark the other tiles of the focused one's section go: a black veil at this alpha (of 255). */
