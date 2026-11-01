@@ -2193,31 +2193,24 @@ public class MainActivity extends Activity {
         p.value("City", () -> prefs.cityName(0), d -> { prefs.stepCity(0, d); applyClocks(); refreshWeather(true); });
     }
 
+    /** The same words as BeeshTV Browser's Updates page. */
     private String updateSummary() {
         switch (updater.state()) {
-            case CHECKING: return "Checking…";
+            case CHECKING: return "Checking";
             case DOWNLOADING: return "Downloading " + updater.progress() + "%";
-            case READY: return updater.latest() + " ready";
+            case READY: return updater.latest() + " ready to install";
+            case UP_TO_DATE: return "Up to date";
             case FAILED: return updater.error();
-            default: return "Version " + updater.installed();
+            default: return "Not checked yet";
         }
     }
 
-    /** Version, a manual check, and installing what's been found. Refilled as the updater moves along. */
+    /** Laid out the same as BeeshTV Browser's Updates page. */
     private void fillUpdates(Panel p) {
-        p.header("Updates", "Version " + updater.installed());
+        p.header("Updates", null);
         Updater.State st = updater.state();
-        String status;
-        switch (st) {
-            case CHECKING: status = "Checking GitHub…"; break;
-            case UP_TO_DATE: status = "Up to date"; break;
-            case DOWNLOADING: status = "Downloading " + updater.latest() + " · " + updater.progress() + "%"; break;
-            case READY: status = updater.latest() + " is ready to install"; break;
-            case FAILED: status = updater.error(); break;
-            default: status = updater.latest() != null && Updater.isNewer(updater.latest(), updater.installed())
-                    ? updater.latest() + " is available" : "Not checked yet";
-        }
-        p.row(0, "Status", status, 0, null);
+        p.row(0, "Version", updater.installed(), 0, null);
+        p.row(0, "Status", updateSummary(), 0, null);
         if (st == Updater.State.READY || st == Updater.State.IDLE && updater.latest() != null
                 && Updater.isNewer(updater.latest(), updater.installed())) {
             p.row(R.drawable.ic_update, "Download and install " + updater.latest(), null, R.drawable.ic_chevron,
@@ -2227,7 +2220,8 @@ public class MainActivity extends Activity {
         p.toggle("Download updates automatically", updater::autoDownload, updater::setAutoDownload);
         if (!updater.canInstall()) p.row(0, "Allow installing updates", "Allow", R.drawable.ic_chevron,
                 () -> launch(updater.installPermissionScreen()));
-        p.note("New versions come from github.com/" + Updater.REPO + ". The TV asks you to confirm before it installs one.");
+        p.note("New versions come from github.com/" + Updater.REPO + ". The TV asks you to confirm before "
+                + "it installs one.");
     }
 
     /** Rebuilds Home in the new layout behind the open Settings panel, back at the top. */
@@ -2257,7 +2251,7 @@ public class MainActivity extends Activity {
         String version = "";
         try { version = getPackageManager().getPackageInfo(getPackageName(), 0).versionName; }
         catch (PackageManager.NameNotFoundException ignored) { }
-        p.header("BeeshTV Launcher", version);
+        p.header("BeeshTV Launcher", "Version " + version);
         p.note("A quiet home screen for Android TV: your apps, the time where your people are, and a "
                 + "landscape that changes with the time of day.");
         p.row(0, "Made by Bishwo Bhusal", "github.com/bishwofic", R.drawable.ic_chevron, () -> {
