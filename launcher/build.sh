@@ -15,7 +15,7 @@ VERSION="$(sed -n 's/.*android:versionName="\([^"]*\)".*/\1/p' AndroidManifest.x
 rm -rf "$B" && mkdir -p "$B/gen" "$B/classes" "$B/dex" ../dist
 "$BT/aapt2" compile --dir res -o "$B/res.zip"
 "$BT/aapt2" link -o "$B/base.apk" -I "$JAR" --manifest AndroidManifest.xml --java "$B/gen" \
-  -A assets -0 jpg -0 ttf --min-sdk-version 30 --target-sdk-version 30 "$B/res.zip"
+  -A assets -0 jpg -0 ttf --min-sdk-version 30 --target-sdk-version 34 "$B/res.zip"
 javac -nowarn -Xlint:-options --release 11 -classpath "$JAR" -d "$B/classes" \
   $(find src "$B/gen" -name '*.java')
 "$BT/d8" --min-api 30 --lib "$JAR" --output "$B/dex" $(find "$B/classes" -name '*.class')

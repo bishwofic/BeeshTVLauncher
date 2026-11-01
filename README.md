@@ -34,8 +34,12 @@ No ads, no rows of recommendations, no account.
   in three styles: landscapes, cityscapes or the current season.
 - **Wi-Fi, Bluetooth, Inputs and Notifications** panels: see your network and nearby ones, which
   devices are connected, switch HDMI, and read or clear notifications without leaving Home.
-- **Pairs with [BEESH Browser](https://github.com/bishwofic/BeeshTVBrowser)**: the browser's home page shows
-  the same weather, and its frosted background is your Home screen, blurred.
+- **BEESH TV Suite**: setup offers the other BEESH apps, for now
+  [BEESH Browser](https://github.com/bishwofic/BeeshTVBrowser). Open **BEESH TV Suite** to see them, each
+  ticked; untick any you don't want and choose **Install**. Each comes from its own repo's newest release
+  and the TV asks once to confirm. It's also under **Settings → BEESH TV Suite**.
+- **Pairs with BEESH Browser**: the browser's home page shows the same weather, and its frosted
+  background is your Home screen, blurred.
 - **Keeps the Home button** on Google TV, which otherwise hands it back to its own home screen.
 - Small and quick: about 2 MB, plain Android, nothing running in the background except the
   notification listener and the Home button service.
@@ -48,7 +52,7 @@ a Mac). Works on Android TV and Google TV running Android 11 or newer.
 1. On the TV, open **Settings → System → About** and press OK on **Android TV OS build** seven times.
    Go back to **Settings → System → Developer options** and turn on **USB debugging**.
 2. Find the TV's IP address in **Settings → Network & Internet** (select your Wi-Fi network).
-3. Download this repo (or just `dist/BeeshTV-Launcher-2.5.apk` and `install.sh`) and run:
+3. Download this repo (or just `dist/BeeshTV-Launcher-3.0.apk` and `install.sh`) and run:
 
    ```bash
    ./install.sh 192.168.1.20
@@ -56,22 +60,26 @@ a Mac). Works on Android TV and Google TV running Android 11 or newer.
 
 4. Accept **Allow debugging?** on the TV. Press Home.
 
-`install.sh` installs the APK, makes BeeshTV the Home app, switches off Google TV's own home screen
-(nothing is uninstalled), grants every permission the launcher uses (including installing its own
-updates), turns on *BEESH Home button*, and sets the TV's **Private DNS** to AdGuard
-(`dns.adguard-dns.com`), which blocks ads and trackers in every app. Change or turn off Private DNS
-any time under **Settings → Network & Internet**.
+`install.sh` installs the whole of BEESH TV Suite. It installs the launcher APK, makes BeeshTV the
+Home app, switches off Google TV's own home screen (nothing is uninstalled), grants every permission
+the launcher uses (including installing its own updates), turns on *BEESH Home button*, and sets the
+TV's **Private DNS** to AdGuard (`dns.adguard-dns.com`), which blocks ads and trackers in every app.
+Then it downloads the newest **BEESH Browser** from GitHub, installs it, makes it the TV's browser and
+lets it use the microphone for voice typing. Change or turn off Private DNS any time under
+**Settings → Network & Internet**. For the launcher alone: `./install.sh 192.168.1.20 --no-browser`.
 
 To go back to the stock home screen (and automatic Private DNS): `./install.sh 192.168.1.20 --undo`.
 
 ### Installing just the APK
 
-Download `BeeshTV-Launcher-2.5.apk` from the [latest release](https://github.com/bishwofic/BeeshTVLauncher/releases/latest),
+Download `BeeshTV-Launcher-3.0.apk` from the [latest release](https://github.com/bishwofic/BeeshTVLauncher/releases/latest),
 copy it to the TV (a USB stick, LocalSend, or a downloader app) and open it, then open
 **BEESH Launcher** from the TV's apps. Setup opens by itself and asks for what it needs, one at a
 time: location (for local weather; the time zone always comes from the TV), notification access (for
-the bell), to become the Home app, on Google TV **Keep the Home button**, and permission to install
-updates. **Open Launcher Settings** at the bottom goes straight to the layouts.
+the bell), Bluetooth (for the paired devices panel), to become the Home app, on Google TV **Keep the
+Home button**, and permission to install updates. Then **BEESH TV Suite** offers BEESH Browser, ticked;
+**Install BEESH Browser** fetches it. **Open Launcher Settings** at the bottom goes straight to the
+layouts.
 
 Google TV keeps its own home screen on the Home button even after you pick another one. **Keep the
 Home button** turns on a small accessibility service, *BEESH Home button*, that sends Home to
@@ -86,7 +94,7 @@ switches Google TV's home screen off.
 
 ```bash
 adb connect 192.168.1.20:5555
-adb install BeeshTV-Launcher-2.5.apk
+adb install BeeshTV-Launcher-3.0.apk
 adb shell cmd package set-home-activity com.beeshtv.home/.MainActivity
 ```
 
@@ -101,11 +109,13 @@ adb shell pm disable-user --user 0 com.google.android.tungsten.setupwraith
 Turn them back on with `adb shell pm enable <package>`.
 
 The Wi-Fi panel shows network names only when the launcher has location permission and Location
-is on, the bell needs notification access, and updates need permission to install apps.
+is on, the bell needs notification access, the Bluetooth panel needs Bluetooth access, and updates
+need permission to install apps.
 `install.sh` sets them all; by hand:
 
 ```bash
 adb shell pm grant com.beeshtv.home android.permission.ACCESS_FINE_LOCATION
+adb shell pm grant com.beeshtv.home android.permission.BLUETOOTH_CONNECT
 adb shell cmd location set-location-enabled true
 adb shell cmd notification allow_listener com.beeshtv.home/com.beeshtv.home.NotificationsService
 adb shell appops set com.beeshtv.home REQUEST_INSTALL_PACKAGES allow

@@ -35,6 +35,8 @@ final class Updater {
     static final String REPO = "bishwofic/BeeshTVLauncher";
     static final long CHECK_EVERY_MS = 6L * 60 * 60 * 1000;
     static final String ACTION_STATUS = "com.beeshtv.home.INSTALL_STATUS";
+    /** On an install's status: the app's name, for another BEESH app (see Suite); absent for an update. */
+    static final String EXTRA_WHAT = "what";
 
     enum State { IDLE, CHECKING, UP_TO_DATE, DOWNLOADING, READY, FAILED }
 
@@ -205,7 +207,7 @@ final class Updater {
         if (r != null) r.run();
     }
 
-    private static HttpURLConnection open(String url) throws Exception {
+    static HttpURLConnection open(String url) throws Exception {
         HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
         c.setConnectTimeout(15000);
         c.setReadTimeout(30000);
@@ -216,7 +218,7 @@ final class Updater {
         return c;
     }
 
-    private static String get(String url) throws Exception {
+    static String get(String url) throws Exception {
         HttpURLConnection c = open(url);
         try (InputStream in = c.getInputStream()) {
             java.io.ByteArrayOutputStream b = new java.io.ByteArrayOutputStream();
@@ -233,13 +235,18 @@ final class Updater {
         @Override
         public void onReceive(Context c, Intent i) {
             int status = i.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE);
+            String what = i.getStringExtra(EXTRA_WHAT);
             if (status != PackageInstaller.STATUS_PENDING_USER_ACTION) {
-                // Success restarts the launcher as the new version, so only failures need saying.
-                if (status != PackageInstaller.STATUS_SUCCESS && status != PackageInstaller.STATUS_FAILURE_ABORTED) {
+                // An update's success restarts the launcher as the new version, so only failures need
+                // saying; another BEESH app says it's in.
+                String say = null;
+                if (status == PackageInstaller.STATUS_SUCCESS) {
+                    if (what != null) say = what + " installed";
+                } else if (status != PackageInstaller.STATUS_FAILURE_ABORTED) {
                     String why = i.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE);
-                    android.widget.Toast.makeText(c, "Update didn't install" + (why == null ? "" : ": " + why),
-                            android.widget.Toast.LENGTH_LONG).show();
+                    say = (what == null ? "Update" : what) + " didn't install" + (why == null ? "" : ": " + why);
                 }
+                if (say != null) android.widget.Toast.makeText(c, say, android.widget.Toast.LENGTH_LONG).show();
                 return;
             }
             Intent confirm = i.getParcelableExtra(Intent.EXTRA_INTENT);

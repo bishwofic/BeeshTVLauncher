@@ -131,6 +131,7 @@ public class MainActivity extends Activity {
     private Weather weather;
     private Here here;
     private Updater updater;
+    private Suite suite;
     private final Handler handler = new Handler(Looper.getMainLooper());
 
     private FrameLayout root;
@@ -189,7 +190,12 @@ public class MainActivity extends Activity {
         @Override public void onReceive(Context c, Intent i) { updateClocks(); updateWifiIcon(); }
     };
     private final BroadcastReceiver packages = new BroadcastReceiver() {
-        @Override public void onReceive(Context c, Intent i) { loadApps(); buildPages(); }
+        @Override public void onReceive(Context c, Intent i) {
+            loadApps();
+            buildPages();
+            // A BEESH TV Suite app just went in (or out): setup's list says so.
+            if (panel != null && "setup".equals(panel.kind)) panel.refill();
+        }
     };
 
     // ---------------------------------------------------------------- lifecycle
@@ -203,6 +209,8 @@ public class MainActivity extends Activity {
         here = new Here(this, prefs.raw());
         updater = new Updater(this, prefs.raw());
         updater.onChange = this::onUpdateChanged;
+        suite = new Suite(this);
+        suite.onChange = () -> { if (panel != null && "setup".equals(panel.kind)) panel.refill(); };
         getWindow().getDecorView().setSystemUiVisibility(
                 View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
                         | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY | View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
@@ -249,8 +257,10 @@ public class MainActivity extends Activity {
         if (panel != null && "setup".equals(panel.kind)) panel.refill();
         // Keep asking while Home isn't ours; the rest once per new thing to allow (setup_shown_2 added
         // installing updates), and it stays under Settings → Permissions.
-        if (!homeKept() || (!prefs.raw().getBoolean("setup_shown_2", false) && !setupComplete())) {
-            prefs.raw().edit().putBoolean("setup_shown_2", true).apply();
+        // Once, too, to offer the BEESH TV Suite apps that aren't on the TV yet.
+        boolean offerSuite = !prefs.raw().getBoolean("suite_offered", false) && !suite.missing().isEmpty();
+        if (!homeKept() || offerSuite || (!prefs.raw().getBoolean("setup_shown_2", false) && !setupComplete())) {
+            prefs.raw().edit().putBoolean("setup_shown_2", true).putBoolean("suite_offered", true).apply();
             handler.postDelayed(() -> { if (panel == null) openSetup(); }, 900);
         }
         if (firstShow) { firstShow = false; playEntrance(); }
@@ -2014,6 +2024,13 @@ public class MainActivity extends Activity {
         BluetoothAdapter bt = BluetoothAdapter.getDefaultAdapter();
         boolean on = bt != null && bt.isEnabled();
         p.header("Bluetooth", bt == null ? "Unavailable" : on ? "On" : "Off");
+        if (!bluetoothAllowed()) {
+            p.note("BeeshTV needs permission to see your paired devices.");
+            p.row(0, "Allow", null, R.drawable.ic_chevron, this::requestBluetooth);
+            p.gap();
+            p.row(0, "Bluetooth settings", null, R.drawable.ic_chevron, settings);
+            return;
+        }
         List<BluetoothDevice> devices = new ArrayList<>();
         try { if (on) devices.addAll(bt.getBondedDevices()); } catch (SecurityException ignored) { }
         Collections.sort(devices, (a, b) -> Boolean.compare(connected(b), connected(a)));
@@ -2132,6 +2149,9 @@ public class MainActivity extends Activity {
                 () -> openPage("clock", this::fillClock));
         p.row(R.drawable.ic_update, "Updates", updateSummary(), R.drawable.ic_chevron,
                 () -> openPage("updates", this::fillUpdates));
+        int suiteHave = Suite.APPS.length - suite.missing().size();
+        p.row(R.drawable.ic_suite, "BEESH TV Suite", suiteHave == Suite.APPS.length ? "All installed"
+                : suiteHave + " of " + Suite.APPS.length + " installed", R.drawable.ic_chevron, this::openSuite);
         p.row(R.drawable.ic_lock, "Permissions", setupComplete() ? "All set" : "Needs attention", R.drawable.ic_chevron,
                 this::openSetup);
         p.row(R.drawable.ic_info, "About", null, R.drawable.ic_chevron, this::openAbout);
@@ -2278,7 +2298,7 @@ public class MainActivity extends Activity {
 
     // ---- First run: permissions and Home
 
-    static final int REQ_LOCATION = 41, REQ_HOME = 42;
+    static final int REQ_LOCATION = 41, REQ_HOME = 42, REQ_BLUETOOTH = 43;
 
     private boolean hasLocation() {
         return checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
@@ -2309,7 +2329,18 @@ public class MainActivity extends Activity {
     }
 
     private boolean setupComplete() {
-        return hasLocation() && locationOn() && notificationsAllowed() && homeKept() && updater.canInstall();
+        return hasLocation() && locationOn() && notificationsAllowed() && homeKept() && updater.canInstall()
+                && bluetoothAllowed();
+    }
+
+    /** Paired devices and their names need this from Android 12 on. */
+    private boolean bluetoothAllowed() {
+        return Build.VERSION.SDK_INT < 31
+                || checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    private void requestBluetooth() {
+        if (Build.VERSION.SDK_INT >= 31) requestPermissions(new String[]{Manifest.permission.BLUETOOTH_CONNECT}, REQ_BLUETOOTH);
     }
 
     private void openSetup() {
@@ -2330,6 +2361,9 @@ public class MainActivity extends Activity {
         });
         p.row(0, "Notifications, for the bell", notes ? "Allowed" : "Allow", notes ? R.drawable.ic_check : R.drawable.ic_chevron,
                 notes ? null : this::openListenerSettings);
+        boolean bt = bluetoothAllowed();
+        p.row(0, "Bluetooth, for paired devices", bt ? "Allowed" : "Allow", bt ? R.drawable.ic_check : R.drawable.ic_chevron,
+                bt ? null : this::requestBluetooth);
         p.row(0, "Use as Home screen", home ? "Yes" : "Set", home ? R.drawable.ic_check : R.drawable.ic_chevron,
                 home ? null : this::requestHome);
         if (HomeGuard.stockEnabled(this)) {
@@ -2343,9 +2377,61 @@ public class MainActivity extends Activity {
         boolean installs = updater.canInstall();
         p.row(0, "Install updates from GitHub", installs ? "Allowed" : "Allow", installs ? R.drawable.ic_check : R.drawable.ic_chevron,
                 installs ? null : () -> launch(updater.installPermissionScreen()));
+        fillSuite(p);
         p.row(R.drawable.ic_settings, "Open Launcher Settings", null, R.drawable.ic_chevron, this::openSettings);
         p.gap();
         p.row(0, "Done", null, 0, () -> closePanel(true));
+    }
+
+    /** The BEESH TV Suite list opened under its row. */
+    private boolean suiteOpen;
+    /** Where the suite's row is in setup's list, to land on it from Settings. */
+    private int suiteRow;
+
+    /** Setup, scrolled to BEESH TV Suite with its list open. */
+    private void openSuite() {
+        suiteOpen = true;
+        openSetup();
+        if (panel != null) panel.select(suiteRow);
+    }
+    /** Suite apps unticked in the list; everything is ticked to begin with. */
+    private final java.util.Set<String> suiteSkip = new java.util.HashSet<>();
+
+    /**
+     * BEESH TV Suite: the other BEESH apps, offered in setup. Its row opens a list of them, each ticked;
+     * Install fetches the ticked ones from GitHub and the TV asks to confirm each.
+     */
+    private void fillSuite(Panel p) {
+        List<Suite.App> missing = suite.missing();
+        int total = Suite.APPS.length;
+        suiteRow = p.items.size();
+        if (missing.isEmpty()) {
+            p.row(0, "BEESH TV Suite", "All installed", R.drawable.ic_check, null);
+            return;
+        }
+        p.row(0, "BEESH TV Suite", (total - missing.size()) + " of " + total + " installed",
+                suiteOpen ? R.drawable.ic_collapse : R.drawable.ic_expand, () -> { suiteOpen = !suiteOpen; p.refill(); });
+        if (suiteOpen) {
+            for (Suite.App a : Suite.APPS) {
+                boolean have = suite.installed(a), on = have || !suiteSkip.contains(a.pkg);
+                p.row(on ? R.drawable.ic_box_checked : R.drawable.ic_box, a.name, have ? "Installed" : null, 0,
+                        have ? null : () -> { if (!suiteSkip.remove(a.pkg)) suiteSkip.add(a.pkg); p.refill(); });
+            }
+        }
+        List<Suite.App> picked = new ArrayList<>();
+        for (Suite.App a : missing) if (!suiteSkip.contains(a.pkg)) picked.add(a);
+        boolean busy = suite.state() == Suite.State.DOWNLOADING || suite.state() == Suite.State.INSTALLING;
+        String status = suite.state() == Suite.State.DOWNLOADING ? "Downloading " + suite.current() + " · " + suite.progress() + "%"
+                : suite.state() == Suite.State.INSTALLING ? "Installing " + suite.current()
+                : suite.state() == Suite.State.FAILED ? suite.error() : null;
+        String label = picked.isEmpty() ? "Nothing ticked" : picked.size() == 1 ? "Install " + picked.get(0).name
+                : "Install " + picked.size() + " apps";
+        p.row(R.drawable.ic_update, label, status, busy || picked.isEmpty() ? 0 : R.drawable.ic_chevron,
+                busy || picked.isEmpty() ? null : () -> {
+                    // Installing apps needs the same permission as updates; the TV's switch for it first.
+                    if (!updater.canInstall()) { launch(updater.installPermissionScreen()); return; }
+                    suite.install(picked);
+                });
     }
 
     private void openListenerSettings() {
@@ -2374,6 +2460,10 @@ public class MainActivity extends Activity {
     @Override
     public void onRequestPermissionsResult(int code, String[] perms, int[] results) {
         super.onRequestPermissionsResult(code, perms, results);
+        if (code == REQ_BLUETOOTH) {
+            if (panel != null && ("setup".equals(panel.kind) || "bluetooth".equals(panel.kind))) panel.refill();
+            return;
+        }
         if (code != REQ_LOCATION) return;
         // Now that location is allowed, find where the TV is and fetch its weather.
         here.forceRefresh(() -> { applyClocks(); refreshWeather(true); });

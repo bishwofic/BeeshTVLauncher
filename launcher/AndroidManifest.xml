@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.beeshtv.home"
-    android:versionCode="10"
-    android:versionName="2.5">
+    android:versionCode="11"
+    android:versionName="3.0">
 
     <!-- Wallpapers from wallhaven.cc and weather from open-meteo.com. -->
     <uses-permission android:name="android.permission.INTERNET" />
@@ -16,9 +16,10 @@
     <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
     <!-- Installs new releases from GitHub (the system still asks to confirm). -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
-    <!-- Bluetooth panel: paired devices and whether they are connected. -->
-    <uses-permission android:name="android.permission.BLUETOOTH" />
-    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
+    <!-- Bluetooth panel: paired devices and whether they are connected (asked for in setup). -->
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
 
     <uses-feature android:name="android.software.leanback" android:required="false" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
@@ -31,6 +32,8 @@
         <intent>
             <action android:name="android.search.action.GLOBAL_SEARCH" />
         </intent>
+        <!-- The other BEESH TV Suite apps, to tell which are installed (see Suite). -->
+        <package android:name="com.beeshtv.browser" />
         <package android:name="com.tcl.tv" />
         <package android:name="com.tcl.suspension" />
         <!-- Stock home screens, to tell whether they'd take the Home button back (HomeGuard). -->

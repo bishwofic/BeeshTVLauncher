@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
-# Install BEESH Launcher on an Android TV / Google TV over the network and make it the Home app:
-# installs the APK, switches off the stock home screen, grants every permission the launcher uses,
-# and sets the TV's Private DNS to AdGuard (blocks ads and trackers for every app).
+# Install BEESH TV Suite on an Android TV / Google TV over the network: BEESH Launcher as the Home app
+# (the APK in dist/; the stock home screen is switched off and every permission the launcher uses is
+# granted), BEESH Browser from its newest GitHub release as the TV's browser, and the TV's Private DNS
+# set to AdGuard (blocks ads and trackers for every app).
 #
-#   ./install.sh 192.168.1.20            install the APK in dist/ and set it as Home
-#   ./install.sh 192.168.1.20 --undo     give Home back to the stock launcher, remove BeeshTV and
-#                                        set Private DNS back to automatic
+#   ./install.sh 192.168.1.20               the whole suite
+#   ./install.sh 192.168.1.20 --no-browser  just the launcher
+#   ./install.sh 192.168.1.20 --undo        give Home back to the stock launcher, remove BeeshTV and
+#                                           set Private DNS back to automatic (BEESH Browser stays)
 #
 # Turn on the TV's developer options and USB / network debugging first, and accept the
 # "Allow debugging?" prompt on the TV the first time.
@@ -21,6 +23,8 @@ PKG=com.beeshtv.home
 STOCK="com.google.android.apps.tv.launcherx com.google.android.tungsten.setupwraith com.google.android.tvlauncher"
 GUARD=$PKG/$PKG.HomeGuard
 DNS=dns.adguard-dns.com
+BROWSER=com.beeshtv.browser
+BROWSER_REPO=bishwofic/BeeshTVBrowser
 
 # The accessibility services that are on, without BeeshTV's, separated by ':'.
 others() {
@@ -55,6 +59,8 @@ adb shell appops set $PKG REQUEST_INSTALL_PACKAGES allow >/dev/null 2>&1 || true
 # The Wi-Fi panel can only see network names with location permission and Location on.
 adb shell pm grant $PKG android.permission.ACCESS_FINE_LOCATION
 adb shell pm grant $PKG android.permission.ACCESS_COARSE_LOCATION
+# The Bluetooth panel's paired devices (Android 12 and newer ask for this separately).
+adb shell pm grant $PKG android.permission.BLUETOOTH_CONNECT >/dev/null 2>&1 || true
 adb shell cmd location set-location-enabled true >/dev/null 2>&1 || true
 # Lets the bell in the menu bar list and clear notifications. Revoking first makes Android connect
 # the listener again after an update.
@@ -75,6 +81,27 @@ for p in $STOCK; do adb shell pm disable-user --user 0 "$p" >/dev/null 2>&1 || t
 adb shell cmd package set-home-activity --user 0 $PKG/.MainActivity
 # A stale home task from the old launcher can make Home open behind the current app.
 adb shell am force-stop com.android.tv.settings
+
+# BEESH Browser, the rest of BEESH TV Suite: its newest release, made the TV's browser, with the
+# microphone for voice typing and permission to install its own updates.
+if [ "${2:-}" != "--no-browser" ]; then
+  URL="$(curl -fsSL "https://api.github.com/repos/$BROWSER_REPO/releases/latest" 2>/dev/null \
+    | grep -o '"browser_download_url": *"[^"]*\.apk"' | head -1 | sed 's/.*"\(http[^"]*\)"$/\1/' || true)"
+  TMP="$(mktemp -d)"
+  if [ -n "$URL" ] && curl -fsSL -o "$TMP/browser.apk" "$URL"; then
+    echo "Installing BEESH Browser ($(basename "$URL"))"
+    if adb install -r --no-incremental "$TMP/browser.apk"; then
+      adb shell appops set $BROWSER REQUEST_INSTALL_PACKAGES allow >/dev/null 2>&1 || true
+      adb shell pm grant $BROWSER android.permission.RECORD_AUDIO >/dev/null 2>&1 || true
+      adb shell cmd role add-role-holder --user 0 android.app.role.BROWSER $BROWSER >/dev/null 2>&1 || true
+    else
+      echo "BEESH Browser didn't install (a copy signed with another key may be on the TV; uninstall it first)."
+    fi
+  else
+    echo "Couldn't download BEESH Browser from GitHub; skipped. Install it later from the launcher's setup."
+  fi
+  rm -rf "$TMP"
+fi
 # Updating stops the launcher, and Android brings back whatever app was underneath (often the last one
 # you used). Open the launcher directly, once it's ready, instead of pressing Home.
 sleep 1
