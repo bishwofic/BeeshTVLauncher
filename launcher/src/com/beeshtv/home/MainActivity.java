@@ -976,7 +976,14 @@ public class MainActivity extends Activity {
             if (a.isBanner && span[0] == 2) {
                 ImageView img = new ImageView(this);
                 img.setImageDrawable(a.art);
-                img.setScaleType(ImageView.ScaleType.CENTER_CROP);
+                if (span[1] == 1) {
+                    img.setScaleType(ImageView.ScaleType.CENTER_CROP);
+                } else {
+                    // A big square tile: the whole banner across it, on the banner's own edge colour, so
+                    // a wide logo isn't cut off at the sides.
+                    img.setScaleType(ImageView.ScaleType.FIT_CENTER);
+                    t.setBackgroundColor(edgeColour(a.art, accent(a)));
+                }
                 t.addView(img, new FrameLayout.LayoutParams(-1, -1));
                 label = null;
             } else {
@@ -1046,6 +1053,30 @@ public class MainActivity extends Activity {
     }
 
     /** A solid colour from the app's icon, deep enough for white text; a Metro colour if it's grey. */
+    /** The colour down a banner's left and right edges, to continue it past them; fallback if it varies. */
+    private static int edgeColour(Drawable art, int fallback) {
+        try {
+            Bitmap b = Bitmap.createBitmap(32, 18, Bitmap.Config.ARGB_8888);
+            Drawable d = art.getConstantState() != null ? art.getConstantState().newDrawable().mutate() : art;
+            d.setBounds(0, 0, 32, 18);
+            d.draw(new Canvas(b));
+            long r = 0, g = 0, bl = 0;
+            int n = 0, lo = 255 * 3, hi = 0;
+            for (int y = 0; y < 18; y++) for (int x : new int[]{0, 1, 30, 31}) {
+                int p = b.getPixel(x, y);
+                r += Color.red(p); g += Color.green(p); bl += Color.blue(p); n++;
+                int sum = Color.red(p) + Color.green(p) + Color.blue(p);
+                lo = Math.min(lo, sum); hi = Math.max(hi, sum);
+            }
+            b.recycle();
+            // A busy edge (a photo, a gradient) has no one colour to carry on with.
+            if (hi - lo > 120) return fallback;
+            return Color.rgb((int) (r / n), (int) (g / n), (int) (bl / n));
+        } catch (RuntimeException e) {
+            return fallback;
+        }
+    }
+
     private int accent(App a) {
         Integer known = accents.get(a.pkg);
         if (known != null) return known;
