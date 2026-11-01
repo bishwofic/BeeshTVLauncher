@@ -40,7 +40,7 @@
     </queries>
 
     <application
-        android:label="BeeshTV Launcher"
+        android:label="BEESH Launcher"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher"
         android:banner="@drawable/banner"
@@ -94,7 +94,7 @@
             android:name=".Updater$InstallStatus"
             android:exported="false" />
 
-        <!-- Shares the photo on Home and the weather, read-only, with BeeshTV Browser. -->
+        <!-- Shares the photo on Home and the weather, read-only, with BEESH Browser. -->
         <provider
             android:name=".ShareProvider"
             android:authorities="com.beeshtv.home.share"
@@ -103,7 +103,7 @@
         <!-- Lists and clears notifications for the bell in the menu bar, once access is granted. -->
         <service
             android:name=".NotificationsService"
-            android:label="BeeshTV Launcher"
+            android:label="BEESH Launcher"
             android:exported="true"
             android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
             <intent-filter>

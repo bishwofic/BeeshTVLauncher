@@ -12,5 +12,5 @@ if gh release view "v$VERSION" >/dev/null 2>&1; then
 fi
 launcher/build.sh
 gh release create "v$VERSION" "dist/BeeshTV-Launcher-$VERSION.apk" \
-  --title "BeeshTV Launcher $VERSION" --generate-notes
+  --title "BEESH Launcher $VERSION" --generate-notes
 echo "Released v$VERSION. TVs pick it up within six hours, or at once from Settings → Updates."

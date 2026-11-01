@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install BeeshTV Launcher on an Android TV / Google TV over the network and make it the Home app:
+# Install BEESH Launcher on an Android TV / Google TV over the network and make it the Home app:
 # installs the APK, switches off the stock home screen, grants every permission the launcher uses,
 # and sets the TV's Private DNS to AdGuard (blocks ads and trackers for every app).
 #

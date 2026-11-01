@@ -1,4 +1,4 @@
-# BeeshTV Launcher
+# BEESH Launcher
 
 A calm home screen for Android TV and Google TV. Your apps, the time and weather where you are and
 where your people are, and a landscape that changes with the time of day.
@@ -56,7 +56,7 @@ a Mac). Works on Android TV and Google TV running Android 11 or newer.
 
 `install.sh` installs the APK, makes BeeshTV the Home app, switches off Google TV's own home screen
 (nothing is uninstalled), grants every permission the launcher uses (including installing its own
-updates), turns on *BeeshTV Home button*, and sets the TV's **Private DNS** to AdGuard
+updates), turns on *BEESH Home button*, and sets the TV's **Private DNS** to AdGuard
 (`dns.adguard-dns.com`), which blocks ads and trackers in every app. Change or turn off Private DNS
 any time under **Settings → Network & Internet**.
 
@@ -66,13 +66,13 @@ To go back to the stock home screen (and automatic Private DNS): `./install.sh 1
 
 Download `BeeshTV-Launcher-2.0.apk` from the [latest release](https://github.com/bishwofic/BeeshTVLauncher/releases/latest),
 copy it to the TV (a USB stick, LocalSend, or a downloader app) and open it, then open
-**BeeshTV Launcher** from the TV's apps. Setup opens by itself and asks for what it needs, one at a
+**BEESH Launcher** from the TV's apps. Setup opens by itself and asks for what it needs, one at a
 time: location (for local weather; the time zone always comes from the TV), notification access (for
 the bell), to become the Home app, on Google TV **Keep the Home button**, and permission to install
 updates. **Open Launcher Settings** at the bottom goes straight to the layouts.
 
 Google TV keeps its own home screen on the Home button even after you pick another one. **Keep the
-Home button** turns on a small accessibility service, *BeeshTV Home button*, that sends Home to
+Home button** turns on a small accessibility service, *BEESH Home button*, that sends Home to
 BeeshTV instead. It only listens for the Home key and reads nothing on screen. If the TV says the
 setting is restricted, open **App info** for BeeshTV, allow restricted settings, and try again.
 

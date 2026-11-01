@@ -14,7 +14,7 @@ import java.io.File;
 import java.io.FileNotFoundException;
 
 /**
- * Lets BeeshTV Browser show the same photo and weather as Home, read-only:
+ * Lets BEESH Browser show the same photo and weather as Home, read-only:
  *   content://com.beeshtv.home.share/wallpaper   the photo on Home now (a JPEG)
  *   content://com.beeshtv.home.share/weather     one row: temp, label, code, day (1 or 0)
  *   content://com.beeshtv.home.share/screen      Home as it last looked, small (a JPEG)

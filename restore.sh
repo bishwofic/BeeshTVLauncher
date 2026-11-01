@@ -6,7 +6,7 @@
 # What it does:
 #   1. Re-enables every package that is disabled now but wasn't in the backup (one pm call each).
 #   2. Restores Private DNS, Location and the accessibility-service list to their backed-up values.
-#   3. Sets the backed-up home app as default again, removes BeeshTV Launcher, presses Home.
+#   3. Sets the backed-up home app as default again, removes BEESH Launcher, presses Home.
 # Nothing was ever uninstalled, so nothing needs reinstalling.
 set -euo pipefail
 cd "$(dirname "$0")"

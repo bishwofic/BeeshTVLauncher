@@ -84,7 +84,7 @@ import java.util.function.IntConsumer;
 import java.util.function.Supplier;
 
 /**
- * BeeshTV Launcher. A landscape that follows the time of day, under a soft vignette. Across the top:
+ * BEESH Launcher. A landscape that follows the time of day, under a soft vignette. Across the top:
  * a world clock and HOME / APPS on the left; Wi-Fi, Bluetooth, Inputs, Notifications, Settings and RAM,
  * then the time, date and local weather, on the right. Below, three
  * sections of tiles: YOUR APPS, OTHER APPS (everything else, A–Z) and INPUTS. The Apps tab is a
@@ -2076,7 +2076,7 @@ public class MainActivity extends Activity {
         List<StatusBarNotification> list = NotificationsService.visible();
         p.header("Notifications", list.isEmpty() ? null : String.valueOf(list.size()));
         if (!NotificationsService.connected()) {
-            p.note("Notification access is off. Allow BeeshTV Launcher under "
+            p.note("Notification access is off. Allow BEESH Launcher under "
                     + "Settings → Apps → Special app access → Notification access.");
             p.row(0, "Open settings", null, R.drawable.ic_chevron, () -> { closePanel(false); openListenerSettings(); });
             return;
@@ -2195,7 +2195,7 @@ public class MainActivity extends Activity {
         p.value("City", () -> prefs.cityName(0), d -> { prefs.stepCity(0, d); applyClocks(); refreshWeather(true); });
     }
 
-    /** The same words as BeeshTV Browser's Updates page. */
+    /** The same words as BEESH Browser's Updates page. */
     private String updateSummary() {
         switch (updater.state()) {
             case CHECKING: return "Checking";
@@ -2207,7 +2207,7 @@ public class MainActivity extends Activity {
         }
     }
 
-    /** Laid out the same as BeeshTV Browser's Updates page. */
+    /** Laid out the same as BEESH Browser's Updates page. */
     private void fillUpdates(Panel p) {
         p.header("Updates", null);
         Updater.State st = updater.state();
@@ -2253,7 +2253,7 @@ public class MainActivity extends Activity {
         String version = "";
         try { version = getPackageManager().getPackageInfo(getPackageName(), 0).versionName; }
         catch (PackageManager.NameNotFoundException ignored) { }
-        p.header("BeeshTV Launcher", "Version " + version);
+        p.header("BEESH Launcher", "Version " + version);
         p.note("A quiet home screen for Android TV: your apps, the time where your people are, and a "
                 + "landscape that changes with the time of day.");
         p.row(0, "Made by Bishwo Bhusal", "github.com/bishwofic", R.drawable.ic_chevron, () -> {
