@@ -267,6 +267,8 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onPause() {
+        // A small picture of Home as you leave it, for BEESH Browser's frosted background.
+        ShareProvider.rememberScreen(this, root);
         super.onPause();
         handler.removeCallbacks(rotate);
         handler.removeCallbacks(ramTick);

@@ -17,6 +17,7 @@ import java.io.FileNotFoundException;
  * Lets BeeshTV Browser show the same photo and weather as Home, read-only:
  *   content://com.beeshtv.home.share/wallpaper   the photo on Home now (a JPEG)
  *   content://com.beeshtv.home.share/weather     one row: temp, label, code, day (1 or 0)
+ *   content://com.beeshtv.home.share/screen      Home as it last looked, small (a JPEG)
  * Nothing else is shared, and nothing can be written.
  */
 public class ShareProvider extends ContentProvider {
@@ -33,6 +34,24 @@ public class ShareProvider extends ContentProvider {
         e.apply();
     }
 
+    /** Draws Home, at a quarter size, to a file the browser can blur behind its own screens. */
+    static void rememberScreen(Context c, android.view.View root) {
+        if (root == null || root.getWidth() == 0) return;
+        try {
+            int w = root.getWidth() / 4, h = root.getHeight() / 4;
+            android.graphics.Bitmap b = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.RGB_565);
+            android.graphics.Canvas cv = new android.graphics.Canvas(b);
+            cv.scale(w / (float) root.getWidth(), h / (float) root.getHeight());
+            root.draw(cv);
+            File tmp = new File(c.getCacheDir(), "screen.tmp");
+            try (java.io.FileOutputStream out = new java.io.FileOutputStream(tmp)) {
+                b.compress(android.graphics.Bitmap.CompressFormat.JPEG, 80, out);
+            }
+            b.recycle();
+            tmp.renameTo(new File(c.getCacheDir(), "screen.jpg"));
+        } catch (Exception | OutOfMemoryError ignored) { }
+    }
+
     private SharedPreferences sp() {
         return getContext().getSharedPreferences("share", Context.MODE_PRIVATE);
     }
@@ -41,7 +60,14 @@ public class ShareProvider extends ContentProvider {
 
     @Override
     public AssetFileDescriptor openAssetFile(Uri uri, String mode) throws FileNotFoundException {
-        if (!"wallpaper".equals(uri.getLastPathSegment()) || !"r".equals(mode)) throw new FileNotFoundException(uri.toString());
+        if (!"r".equals(mode)) throw new FileNotFoundException(uri.toString());
+        if ("screen".equals(uri.getLastPathSegment())) {
+            File f = new File(getContext().getCacheDir(), "screen.jpg");
+            if (!f.exists()) throw new FileNotFoundException("no screen yet");
+            ParcelFileDescriptor fd = ParcelFileDescriptor.open(f, ParcelFileDescriptor.MODE_READ_ONLY);
+            return new AssetFileDescriptor(fd, 0, AssetFileDescriptor.UNKNOWN_LENGTH);
+        }
+        if (!"wallpaper".equals(uri.getLastPathSegment())) throw new FileNotFoundException(uri.toString());
         String key = sp().getString("wallpaper", null);
         if (key == null) throw new FileNotFoundException("no wallpaper yet");
         try {
@@ -66,7 +92,7 @@ public class ShareProvider extends ContentProvider {
         return c;
     }
 
-    @Override public String getType(Uri uri) { return "wallpaper".equals(uri.getLastPathSegment()) ? "image/jpeg" : null; }
+    @Override public String getType(Uri uri) { return "weather".equals(uri.getLastPathSegment()) ? null : "image/jpeg"; }
     @Override public Uri insert(Uri uri, ContentValues v) { return null; }
     @Override public int delete(Uri uri, String s, String[] a) { return 0; }
     @Override public int update(Uri uri, ContentValues v, String s, String[] a) { return 0; }
