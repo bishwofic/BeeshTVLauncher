@@ -24,6 +24,9 @@ No ads, no rows of recommendations, no account.
   - **Metro**: flat coloured tiles in mixed sizes that touch, like the Windows 8 Start screen.
   - **Dock**: your apps in a glass bar that magnifies as you move, like the macOS Dock. When they
     don't all fit it pages sideways, with dots under it; Other Apps and Inputs sit below.
+- **Focus like the Dock, in every layout**: the selected tile grows, its neighbours grow a little, and
+  the rest of the row (and the rows above and below) move aside to make room. Scrolling glides on a
+  spring, so holding the D-pad down moves smoothly instead of in jumps.
 - **Four icon sizes** (Tiny, Small, Medium, Large), plus a separate **Dock size**. Every layout
   remembers its own size, section background and blur, so switching back finds it as you left it.
 - **Section backgrounds** of frosted glass, with the blur Light, Medium or Hard.

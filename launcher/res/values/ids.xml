@@ -2,4 +2,8 @@
 <resources>
     <!-- A Metro tile's size in cells (int[] columns, rows). -->
     <item name="span" type="id" />
+    <!-- The scroll a scroll view is gliding through (see MainActivity.glide). -->
+    <item name="glide" type="id" />
+    <!-- A tile's dimming veil, while it fades (see MainActivity.veil). -->
+    <item name="veil" type="id" />
 </resources>

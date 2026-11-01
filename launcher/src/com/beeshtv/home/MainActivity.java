@@ -21,8 +21,10 @@ import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.content.res.ColorStateList;
 import android.graphics.Bitmap;
+import android.graphics.BitmapShader;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.ComposeShader;
 import android.graphics.LinearGradient;
 import android.graphics.Matrix;
 import android.graphics.Outline;
@@ -99,6 +101,11 @@ public class MainActivity extends Activity {
     // INSET: the header icon and its gap, so tiles line up with the header text, not its icon.
     static final int EDGE = 40, INSET = 24, GAP = 5, BAR_H = 128, CONTENT_TOP = 244, SECTION_GAP = 68;
     static final float FOCUS_SCALE = 1.18f;
+    /**
+     * Tiles growing and making room. A softer start than Ui.EASE: a key press often costs the first
+     * frame, and a curve that covers a third of the way in its first step reads as a jump after it.
+     */
+    static final android.view.animation.Interpolator FOCUS_EASE = new android.view.animation.PathInterpolator(0.3f, 0.6f, 0.2f, 1f);
     static final int SEC_YOURS = 0, SEC_OTHER = 1, SEC_INPUTS = 2;
 
     static final class App {
@@ -298,7 +305,7 @@ public class MainActivity extends Activity {
         // Home pressed while already home: close any panel, back to the first app.
         if (panel != null) closePanel(false);
         showPage(0);
-        homeScroll.smoothScrollTo(0, 0);
+        glide(homeScroll, 0, 0);
         lastPos = null;
         focusContent();
     }
@@ -307,7 +314,7 @@ public class MainActivity extends Activity {
     public void onBackPressed() {
         if (panel != null) { closePanel(true); return; }
         if (page != 0) { showPage(0); focusContent(); return; }
-        homeScroll.smoothScrollTo(0, 0);
+        glide(homeScroll, 0, 0);
         lastPos = null;
         focusContent();
     }
@@ -321,7 +328,6 @@ public class MainActivity extends Activity {
         wallFront = wallpaperLayer();
         root.addView(wallBack, new FrameLayout.LayoutParams(-1, -1));
         root.addView(wallFront, new FrameLayout.LayoutParams(-1, -1));
-        root.addView(new Vignette(this), new FrameLayout.LayoutParams(-1, -1));
         root.addView(buildHome(), new FrameLayout.LayoutParams(-1, -1));
         root.addView(buildLibrary(), new FrameLayout.LayoutParams(-1, -1));
         libBox.setVisibility(View.GONE);
@@ -552,6 +558,7 @@ public class MainActivity extends Activity {
         homeScroll.setOnScrollChangeListener((v, x, y, ox, oy) -> { for (BlurView g : sectionGlass) g.invalidate(); });
         // Rows scrolled up under the menu bar fade out instead of stopping at a hard edge.
         ((HomeScrollView) homeScroll).fadeUnder(dp(100), dp(176));
+        ((HomeScrollView) homeScroll).photo = () -> wallFront;
         homeList = new LinearLayout(this);
         homeList.setOrientation(LinearLayout.VERTICAL);
         homeList.setClipChildren(false);
@@ -913,8 +920,8 @@ public class MainActivity extends Activity {
         if (!(p instanceof HorizontalScrollView)) return;
         HorizontalScrollView sv = (HorizontalScrollView) p;
         int margin = dp(48), x = sv.getScrollX(), w = sv.getWidth();
-        if (card.getLeft() - margin < x) sv.smoothScrollTo(Math.max(0, card.getLeft() - margin), 0);
-        else if (card.getRight() + margin > x + w) sv.smoothScrollTo(card.getRight() + margin - w, 0);
+        if (card.getLeft() - margin < x) glide(sv, Math.max(0, card.getLeft() - margin), 0);
+        else if (card.getRight() + margin > x + w) glide(sv, card.getRight() + margin - w, 0);
     }
 
     // ---- Metro: flat coloured live tiles in mixed sizes, like Windows 8
@@ -1192,7 +1199,7 @@ public class MainActivity extends Activity {
                 if (f != null && f.getParent() == dockRow) return;
                 for (int k = 0; k < dockRow.getChildCount(); k++) {
                     View c = dockRow.getChildAt(k);
-                    c.animate().scaleX(1f).scaleY(1f).translationX(0).setInterpolator(Ui.EASE).setDuration(200).start();
+                    c.animate().scaleX(1f).scaleY(1f).translationX(0).setInterpolator(FOCUS_EASE).setDuration(260).start();
                 }
                 dockLabel.animate().alpha(0f).setDuration(120).start();
             });
@@ -1224,7 +1231,7 @@ public class MainActivity extends Activity {
             }
             c.setPivotX(c.getWidth() / 2f);
             c.setPivotY(c.getHeight());
-            c.animate().scaleX(scale[k]).scaleY(scale[k]).translationX(tx).setInterpolator(Ui.EASE).setDuration(240).start();
+            c.animate().scaleX(scale[k]).scaleY(scale[k]).translationX(tx).setInterpolator(FOCUS_EASE).setDuration(300).start();
         }
         dockLabel.setText(v.getContentDescription());
         dockLabel.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
@@ -1280,11 +1287,11 @@ public class MainActivity extends Activity {
         card.setOnFocusChangeListener((v, has) -> {
             switch (look) {
                 case Prefs.DOCK:
-                    if (v.getParent() == dockRow) dockFocus(v, has); else magnifyRow(v, has, FOCUS_SCALE);
+                    if (v.getParent() == dockRow) dockFocus(v, has); else pushFocus(v, has, FOCUS_SCALE);
                     break;
-                case Prefs.PILLS: ((Pill) v).paint(has); magnifyRow(v, has, 1.06f); break;
-                case Prefs.METRO: v.setForeground(has ? metroBorder() : null); magnifyRow(v, has, 1.05f); break;
-                default: magnifyRow(v, has, FOCUS_SCALE); break;
+                case Prefs.PILLS: ((Pill) v).paint(has); pushFocus(v, has, 1.1f); break;
+                case Prefs.METRO: v.setForeground(has ? metroBorder() : null); pushFocus(v, has, 1.1f); break;
+                default: pushFocus(v, has, FOCUS_SCALE); break;
             }
             // Focus left the tiles (menu bar, a panel): bring every section back to full brightness.
             if (!has) handler.post(() -> { if (!cardPos.containsKey(getCurrentFocus())) spotlight(null); });
@@ -1293,16 +1300,17 @@ public class MainActivity extends Activity {
             int[] pos = cardPos.get(v);
             lastPos = pos;
             // The dock sits at the foot of the first screen; going back up to it shows that screen again.
-            if (look == Prefs.DOCK && v.getParent() == dockRow) { homeScroll.smoothScrollTo(0, 0); return; }
+            if (look == Prefs.DOCK && v.getParent() == dockRow) { glide(homeScroll, 0, 0); return; }
             if (look == Prefs.ROWS) scrollRowTo(v);
             // The first row of Your apps keeps the photo in view; anything lower scrolls up.
             View first = firstCard();
-            if (pos != null && pos[0] == 0 && first != null && centre(v)[1] - centre(first)[1] < dp(8)) homeScroll.smoothScrollTo(0, 0);
+            if (pos != null && pos[0] == 0 && first != null && centre(v)[1] - centre(first)[1] < dp(8)) glide(homeScroll, 0, 0);
             else ensureVisible(homeScroll, look == Prefs.ROWS || look == Prefs.METRO ? v : (View) v.getParent(), dp(64));
         });
     }
 
-    static final float DIMMED = 0.9f;
+    /** How dark the other tiles of the focused one's section go: a black veil at this alpha (of 255). */
+    static final int VEIL = 26;
     static final int WRAP_PAD = 10;
 
     /** In the focused tile's section every other tile dims; other sections stay as they are. */
@@ -1310,17 +1318,130 @@ public class MainActivity extends Activity {
         int[] fp = focused == null ? null : cardPos.get(focused);
         for (int k = 0; k < sections.size(); k++) {
             for (View c : sections.get(k).cards) {
-                float a = fp == null || fp[0] != k || c == focused ? 1f : DIMMED;
-                if (c.getAlpha() != a) c.animate().alpha(a).setInterpolator(Ui.EASE).setDuration(220).start();
+                if (c != focused) veil(c, fp != null && fp[0] == k);
             }
         }
     }
 
-    /** Only the selected tile grows, drawn above its neighbours; nothing else moves. */
-    private void magnifyRow(View v, boolean has, float focusScale) {
-        v.setTranslationZ(has ? 2 : 0);
-        float scale = has ? focusScale : 1f;
-        v.animate().scaleX(scale).scaleY(scale).setInterpolator(Ui.EASE).setDuration(has ? 260 : 200).withLayer().start();
+    /**
+     * Dims a tile with a black veil over it. Not with its opacity: a see-through view with a picture over
+     * its background is drawn through an offscreen layer of its own, every frame, which made moving
+     * between tiles stutter with a whole section dimmed.
+     */
+    private void veil(View c, boolean on) {
+        Drawable fg = c.getForeground();
+        android.graphics.drawable.ColorDrawable v;
+        if (fg instanceof android.graphics.drawable.ColorDrawable) v = (android.graphics.drawable.ColorDrawable) fg;
+        else {
+            // Metro's focus border is the foreground too; the focused tile is never veiled.
+            if (!on) return;
+            v = new android.graphics.drawable.ColorDrawable(Color.BLACK);
+            v.setAlpha(0);
+            c.setForeground(v);
+        }
+        int to = on ? VEIL : 0;
+        Object running = c.getTag(R.id.veil);
+        if (running instanceof android.animation.Animator) ((android.animation.Animator) running).cancel();
+        if (v.getAlpha() == to) return;
+        android.animation.ObjectAnimator a = android.animation.ObjectAnimator.ofInt(v, "alpha", v.getAlpha(), to);
+        a.setInterpolator(Ui.EASE);
+        a.setDuration(220);
+        c.setTag(R.id.veil, a);
+        a.start();
+    }
+
+    /**
+     * Focus, as in the Dock: the tile grows, its neighbours in the row grow a little, and the rest of the
+     * row moves aside to make room; the rows above and below step away too. Metro's mosaic opens up
+     * around the tile instead. Leaving the section puts everything back.
+     */
+    private void pushFocus(View v, boolean has, float focusScale) {
+        Section s = sectionOf(v);
+        if (s == null) return;
+        if (!has) {
+            // Moving to another tile of the same section re-arranges it from there instead.
+            handler.post(() -> {
+                View f = getCurrentFocus();
+                if (f == null || sectionOf(f) != s) relax(s);
+            });
+            return;
+        }
+        // Focused before its first layout (a cold start): try again once the tiles have a size.
+        if (v.getWidth() == 0) { v.post(() -> { if (v.hasFocus()) pushFocus(v, true, focusScale); }); return; }
+        if (s.spatial) openMosaic(s, v, focusScale); else pushRow(s, v, focusScale);
+    }
+
+    /** How much a tile beside the focused one grows, by how far away it is: as in the Dock, but gentler. */
+    private static float neighbourScale(float focusScale, int away) {
+        return away == 0 ? focusScale : away == 1 ? 1f + (focusScale - 1f) * 0.35f : away == 2 ? 1f + (focusScale - 1f) * 0.1f : 1f;
+    }
+
+    private void pushRow(Section s, View v, float focusScale) {
+        int at = s.cards.indexOf(v), cols = Math.max(1, s.cols);
+        int row = at / cols, start = row * cols, n = Math.min(s.cards.size(), start + cols) - start, f = at - start;
+        float[] left = new float[n], width = new float[n], scale = new float[n], cx = new float[n];
+        for (int k = 0; k < n; k++) {
+            View c = s.cards.get(start + k);
+            left[k] = c.getLeft();
+            width[k] = c.getWidth();
+            scale[k] = neighbourScale(focusScale, Math.abs(k - f));
+        }
+        // The focused tile stays where it is; each side is laid out outwards from it at the usual gap,
+        // the gaps closing up (never below touching) where the row would spill past the section's edge.
+        // A sideways-scrolling row (Rows) has no edge.
+        boolean edged = look != Prefs.ROWS;
+        float slack = dp(INSET), edgeL = edged ? -slack : -Float.MAX_VALUE, edgeR = edged ? availWidth() + slack : Float.MAX_VALUE;
+        cx[f] = left[f] + width[f] / 2f;
+        if (f < n - 1) {
+            float gap = left[f + 1] - (left[f] + width[f]), from = cx[f] + width[f] * scale[f] / 2f, need = 0;
+            for (int k = f + 1; k < n; k++) need += width[k] * scale[k];
+            int gaps = n - 1 - f;
+            if (from + need + gaps * gap > edgeR) gap = Math.max(0f, (edgeR - from - need) / gaps);
+            float x = from;
+            for (int k = f + 1; k < n; k++) { x += gap; cx[k] = x + width[k] * scale[k] / 2f; x += width[k] * scale[k]; }
+        }
+        if (f > 0) {
+            float gap = left[f] - (left[f - 1] + width[f - 1]), from = cx[f] - width[f] * scale[f] / 2f, need = 0;
+            for (int k = 0; k < f; k++) need += width[k] * scale[k];
+            if (from - need - f * gap < edgeL) gap = Math.max(0f, (from - need - edgeL) / f);
+            float x = from;
+            for (int k = f - 1; k >= 0; k--) { x -= gap; cx[k] = x - width[k] * scale[k] / 2f; x -= width[k] * scale[k]; }
+        }
+        // The rows above and below step away by as much as the focused tile grew upwards and downwards.
+        float rise = (focusScale - 1f) * v.getHeight() / 2f;
+        for (int i = 0; i < s.cards.size(); i++) {
+            View c = s.cards.get(i);
+            int r = i / cols;
+            if (r == row) {
+                int k = i - start;
+                move(c, scale[k], cx[k] - (left[k] + width[k] / 2f), 0f, k == f ? 2 : scale[k] > 1f ? 1 : 0);
+            } else {
+                move(c, 1f, 0f, r < row ? -rise : rise, 0);
+            }
+        }
+    }
+
+    /** Metro: the focused tile grows and every tile beside, above or below it moves out of its way. */
+    private void openMosaic(Section s, View v, float focusScale) {
+        float dx = (focusScale - 1f) * v.getWidth() / 2f, dy = (focusScale - 1f) * v.getHeight() / 2f;
+        for (View c : s.cards) {
+            if (c == v) { move(c, focusScale, 0f, 0f, 2); continue; }
+            float x = c.getRight() <= v.getLeft() ? -dx : c.getLeft() >= v.getRight() ? dx : 0f;
+            float y = c.getBottom() <= v.getTop() ? -dy : c.getTop() >= v.getBottom() ? dy : 0f;
+            move(c, 1f, x, y, 0);
+        }
+    }
+
+    /** Everything in the section back to where it was. */
+    private void relax(Section s) {
+        for (View c : s.cards) move(c, 1f, 0f, 0f, 0);
+    }
+
+    private void move(View c, float scale, float x, float y, int z) {
+        c.setTranslationZ(z);
+        if (c.getScaleX() == scale && c.getTranslationX() == x && c.getTranslationY() == y) return;
+        c.animate().scaleX(scale).scaleY(scale).translationX(x).translationY(y)
+                .setInterpolator(FOCUS_EASE).setDuration(300).start();
     }
 
     private View tile(App app) {
@@ -1418,7 +1539,7 @@ public class MainActivity extends Activity {
     private void switchInput(Input in) {
         if (in.id == null) {
             // Google TV is this screen: go to the top of Home.
-            homeScroll.smoothScrollTo(0, 0);
+            glide(homeScroll, 0, 0);
             lastPos = null;
             focusContent();
             return;
@@ -1553,8 +1674,70 @@ public class MainActivity extends Activity {
         top -= scroll.getPaddingTop();
         int bottom = top + v.getHeight();
         int y = scroll.getScrollY(), h = scroll.getHeight() - scroll.getPaddingTop() - scroll.getPaddingBottom();
-        if (top - margin < y) scroll.smoothScrollTo(0, Math.max(0, top - margin));
-        else if (bottom + margin > y + h) scroll.smoothScrollTo(0, bottom + margin - h);
+        if (top - margin < y) glide(scroll, 0, Math.max(0, top - margin));
+        else if (bottom + margin > y + h) glide(scroll, 0, bottom + margin - h);
+    }
+
+    /**
+     * Scrolls to (x, y) on a spring, as TV home screens do: it gathers speed from rest instead of jumping
+     * on the first frame, and a new target while it's moving (the D-pad held down) bends its path without
+     * losing speed. Critically damped, so it settles without bouncing: most of the way in a quarter of a
+     * second, all of it in about two fifths.
+     */
+    static void glide(View sv, int x, int y) {
+        // Only as far as it can go, so the spring doesn't press against the end.
+        if (sv instanceof ScrollView && ((ScrollView) sv).getChildCount() > 0) {
+            int range = ((ScrollView) sv).getChildAt(0).getHeight() - (sv.getHeight() - sv.getPaddingTop() - sv.getPaddingBottom());
+            y = Math.max(0, Math.min(y, Math.max(0, range)));
+        } else if (sv instanceof HorizontalScrollView && ((HorizontalScrollView) sv).getChildCount() > 0) {
+            int range = ((HorizontalScrollView) sv).getChildAt(0).getWidth() - (sv.getWidth() - sv.getPaddingLeft() - sv.getPaddingRight());
+            x = Math.max(0, Math.min(x, Math.max(0, range)));
+        }
+        Object o = sv.getTag(R.id.glide);
+        Spring g = o instanceof Spring ? (Spring) o : new Spring(sv);
+        sv.setTag(R.id.glide, g);
+        g.to(x, y);
+    }
+
+    /** A scroll view's glide: position and speed on each axis, stepped once a frame. */
+    static final class Spring implements android.animation.TimeAnimator.TimeListener {
+        /** Stiffness as a natural frequency, per second: higher settles sooner. */
+        private static final float OMEGA = 18f;
+        private final View sv;
+        private final android.animation.TimeAnimator clock = new android.animation.TimeAnimator();
+        private float px, py, vx, vy;
+        private int tx, ty;
+
+        Spring(View sv) {
+            this.sv = sv;
+            clock.setTimeListener(this);
+        }
+
+        void to(int x, int y) {
+            // Starting from rest: from wherever the view is now (it may have been scrolled another way).
+            if (!clock.isRunning()) { px = sv.getScrollX(); py = sv.getScrollY(); vx = vy = 0; }
+            tx = x;
+            ty = y;
+            if (Math.round(px) == tx && Math.round(py) == ty && vx == 0 && vy == 0) return;
+            if (!clock.isRunning()) clock.start();
+        }
+
+        @Override
+        public void onTimeUpdate(android.animation.TimeAnimator a, long total, long delta) {
+            // Small steps, so a slow frame can't make the spring overshoot.
+            float left = Math.min(delta, 50) / 1000f;
+            while (left > 0) {
+                float dt = Math.min(left, 0.004f);
+                left -= dt;
+                vx += (OMEGA * OMEGA * (tx - px) - 2 * OMEGA * vx) * dt;
+                vy += (OMEGA * OMEGA * (ty - py) - 2 * OMEGA * vy) * dt;
+                px += vx * dt;
+                py += vy * dt;
+            }
+            boolean done = Math.abs(tx - px) < 0.5f && Math.abs(ty - py) < 0.5f && Math.abs(vx) < 8 && Math.abs(vy) < 8;
+            if (done) { px = tx; py = ty; vx = vy = 0; a.end(); }
+            sv.scrollTo(Math.round(px), Math.round(py));
+        }
     }
 
     // ---------------------------------------------------------------- keys
@@ -1805,8 +1988,8 @@ public class MainActivity extends Activity {
             View v = items.get(sel).view;
             int y = scroll.getScrollY(), h = scroll.getHeight();
             if (h > 0) {
-                if (v.getTop() - dp(8) < y) scroll.smoothScrollTo(0, Math.max(0, v.getTop() - dp(48)));
-                else if (v.getBottom() + dp(8) > y + h) scroll.smoothScrollTo(0, v.getBottom() + dp(8) - h);
+                if (v.getTop() - dp(8) < y) glide(scroll, 0, Math.max(0, v.getTop() - dp(48)));
+                else if (v.getBottom() + dp(8) > y + h) glide(scroll, 0, v.getBottom() + dp(8) - h);
             }
         }
 
@@ -2259,7 +2442,7 @@ public class MainActivity extends Activity {
         homeList.post(() -> {
             for (Section s : sections) {
                 if (s.kind != kind || s.cards.isEmpty()) continue;
-                homeScroll.smoothScrollTo(0, Math.max(0, Math.round(centre(s.cards.get(0))[1]) - dp(220)));
+                glide(homeScroll, 0, Math.max(0, Math.round(centre(s.cards.get(0))[1]) - dp(220)));
                 return;
             }
         });
@@ -2637,7 +2820,15 @@ public class MainActivity extends Activity {
                 small.recycle();
             }
             Bitmap b2 = blurred;
-            runOnUiThread(() -> crossfade(bm, b2));
+            // The vignette goes into the photo shown on Home; the blurred copy behind the glass stays clear.
+            Bitmap shown = null;
+            if (bm != null) {
+                android.util.DisplayMetrics dm = getResources().getDisplayMetrics();
+                shown = Vignette.bake(bm, dm.widthPixels, dm.heightPixels);
+                bm.recycle();
+            }
+            Bitmap b1 = shown;
+            runOnUiThread(() -> crossfade(b1, b2));
         }).start();
     }
 
@@ -2651,7 +2842,12 @@ public class MainActivity extends Activity {
         wallFront.setImageBitmap(bm);
         wallFront.setAlpha(0f);
         wallFront.animate().alpha(1f).setDuration(firstWallpaper ? 500 : 1600).setInterpolator(Ui.EASE).withLayer()
-                .withEndAction(() -> wallBack.setImageDrawable(null)).start();
+                .withEndAction(() -> {
+                    wallBack.setImageDrawable(null);
+                    // The photo covers the whole screen now: the plain colour under it needn't be painted.
+                    root.setBackground(null);
+                    getWindow().setBackgroundDrawable(null);
+                }).start();
         firstWallpaper = false;
         wallBlur = blurred;
         applyBlur();
@@ -2731,14 +2927,21 @@ public class MainActivity extends Activity {
      */
     static class HomeScrollView extends ScrollView {
         int max = Integer.MAX_VALUE;
-        private int fadeEnd;
+        private int fadeStart, fadeEnd;
         private Paint fadePaint;
         private LinearGradient fadeShader;
         private final Matrix fadeMatrix = new Matrix();
+        /** The photo on screen behind this view, at the same place; the fade paints it back over rows. */
+        java.util.function.Supplier<ImageView> photo;
+        private Bitmap photoBitmap;
+        private Matrix photoMatrix;
+        private final Paint photoPaint = new Paint(Paint.FILTER_BITMAP_FLAG);
+        private ComposeShader photoShader;
         HomeScrollView(Context c) { super(c); }
 
         /** Fully hidden above solidUntil, fading back in by clearAt (both from the top edge). */
         void fadeUnder(int solidUntil, int clearAt) {
+            fadeStart = solidUntil;
             fadeEnd = clearAt;
             fadeShader = new LinearGradient(0, solidUntil, 0, clearAt, 0xFF000000, 0x00000000, Shader.TileMode.CLAMP);
             fadePaint = new Paint();
@@ -2749,6 +2952,17 @@ public class MainActivity extends Activity {
         @Override protected void dispatchDraw(Canvas c) {
             int y = getScrollY(), w = getWidth();
             if (fadeEnd <= 0 || y <= 0) { super.dispatchDraw(c); return; }
+            // The rows as usual, then the photo's own strip over the band, solid at the top and clearing
+            // downwards: the rows fade into the photo in one pass, with no offscreen layer.
+            if (photoUnder()) {
+                super.dispatchDraw(c);
+                // In the screen's own coordinates, where the photo is.
+                int save = c.save();
+                c.translate(0, y);
+                c.drawRect(0, 0, w, fadeEnd, photoPaint);
+                c.restoreToCount(save);
+                return;
+            }
             // Below the band: draw as usual. Inside it: draw into a small layer and erase towards the top.
             c.save();
             c.clipRect(-w, y + fadeEnd, 2 * w, y + getHeight() + w);
@@ -2761,6 +2975,26 @@ public class MainActivity extends Activity {
             c.drawRect(0, y, w, y + fadeEnd, fadePaint);
             c.restoreToCount(sc);
         }
+        /** Gets the photo's strip ready to paint over the band; false while there's no photo yet. */
+        private boolean photoUnder() {
+            ImageView v = photo == null ? null : photo.get();
+            android.graphics.drawable.Drawable d = v == null ? null : v.getDrawable();
+            if (!(d instanceof android.graphics.drawable.BitmapDrawable) || v.getAlpha() < 1f) return false;
+            Bitmap b = ((android.graphics.drawable.BitmapDrawable) d).getBitmap();
+            Matrix m = v.getImageMatrix();
+            if (b != photoBitmap || photoMatrix == null || !photoMatrix.equals(m)) {
+                photoBitmap = b;
+                photoMatrix = new Matrix(m);
+                BitmapShader image = new BitmapShader(b, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP);
+                image.setLocalMatrix(photoMatrix);
+                // Its own gradient: the one for the layer below is moved about as it scrolls.
+                LinearGradient keep = new LinearGradient(0, fadeStart, 0, fadeEnd, 0xFF000000, 0x00000000, Shader.TileMode.CLAMP);
+                photoShader = new ComposeShader(image, keep, PorterDuff.Mode.DST_IN);
+                photoPaint.setShader(photoShader);
+            }
+            return true;
+        }
+
         @Override protected int computeScrollDeltaToGetChildRectOnScreen(android.graphics.Rect r) { return 0; }
         @Override protected void onMeasure(int w, int h) {
             if (max != Integer.MAX_VALUE) h = MeasureSpec.makeMeasureSpec(max, MeasureSpec.AT_MOST);
