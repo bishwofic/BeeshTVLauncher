@@ -26,7 +26,7 @@ No ads, no rows of recommendations, no account.
     don't all fit it pages sideways, with dots under it; Other Apps and Inputs sit below.
 - **Focus like the Dock, in every layout**: the selected tile grows, the two beside it grow a little,
   and the rest of its row slides left and right to make room; nothing else moves. Its name shows in a
-  small dark pill above it, as in the macOS Dock. Scrolling glides on a
+  small frosted pill above it, as in the macOS Dock. Scrolling glides on a
   spring, so holding the D-pad down moves smoothly instead of in jumps.
 - **Four icon sizes** (Tiny, Small, Medium, Large), plus a separate **Dock size**. Every layout
   remembers its own size, section background and blur, so switching back finds it as you left it.

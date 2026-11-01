@@ -1,6 +1,7 @@
 package com.beeshtv.home;
 
 import android.content.Context;
+import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.ColorFilter;
 import android.graphics.Paint;
@@ -10,39 +11,57 @@ import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
 import android.view.Gravity;
+import android.view.View;
 import android.widget.TextView;
 
 /**
- * The selected app's name in a small dark pill with a point underneath it, floating over the tile, as
- * in the macOS Dock. Home moves it along with the tile as it grows and slides.
+ * The selected app's name in a small pill with a point underneath it, floating over the tile, as in the
+ * macOS Dock. It's the launcher's own glass (BlurView's): the blurred photo, lined up with the screen,
+ * under the same dark tint, with a faint edge. Home moves it along with the tile as it grows and slides.
  */
 final class NameTip extends TextView {
+    private final Glass glass;
+
     NameTip(Context c) {
         super(c);
-        float point = Ui.dp(c, 6);
-        setBackground(new Pill(Ui.dp(c, 11), Ui.dp(c, 14), point, Math.max(1f, Ui.dp(c, 0.75f))));
+        float point = Ui.dp(c, 5);
+        glass = new Glass(this, Ui.dp(c, 9), Ui.dp(c, 11), point, Math.max(1f, Ui.dp(c, 0.75f)));
+        setBackground(glass);
         setTypeface(Ui.face(c, 500));
-        setTextSize(15);
+        setTextSize(12.5f);
         setTextColor(0xFFF2F2F7);
         setSingleLine(true);
         setGravity(Gravity.CENTER);
-        setPadding(Ui.dp(c, 14), Ui.dp(c, 7), Ui.dp(c, 14), Ui.dp(c, 8) + Math.round(point));
+        setPadding(Ui.dp(c, 11), Ui.dp(c, 5), Ui.dp(c, 11), Ui.dp(c, 6) + Math.round(point));
     }
 
-    /** Dark glass with a faint edge: one outline round the pill and its point, so the edge has no seam. */
-    private static final class Pill extends Drawable {
-        private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG), edge = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final Path shape = new Path();
-        private final float radius, pointW, pointH;
+    /** The blurred photo behind Home, as the rest of the launcher's glass uses. */
+    void setBackdrop(Bitmap b) {
+        glass.backdrop = b;
+        invalidate();
+    }
 
-        Pill(float radius, float pointW, float pointH, float stroke) {
+    /** One outline round the pill and its point, so the edge runs round both without a seam. */
+    private static final class Glass extends Drawable {
+        private final View owner;
+        private final Paint image = new Paint(Paint.FILTER_BITMAP_FLAG);
+        private final Paint tint = new Paint(Paint.ANTI_ALIAS_FLAG), edge = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Path shape = new Path();
+        private final RectF dst = new RectF();
+        private final int[] loc = new int[2];
+        private final float radius, pointW, pointH;
+        Bitmap backdrop;
+
+        Glass(View owner, float radius, float pointW, float pointH, float stroke) {
+            this.owner = owner;
             this.radius = radius;
             this.pointW = pointW;
             this.pointH = pointH;
-            fill.setColor(0xF52A2A2E);
+            // BlurView's dark tint, a touch deeper since the glass holds text over busy tiles.
+            tint.setColor(0x6B000000);
             edge.setStyle(Paint.Style.STROKE);
             edge.setStrokeWidth(stroke);
-            edge.setColor(0x38FFFFFF);
+            edge.setColor(0x33FFFFFF);
         }
 
         @Override
@@ -68,7 +87,17 @@ final class NameTip extends TextView {
 
         @Override
         public void draw(Canvas c) {
-            c.drawPath(shape, fill);
+            int save = c.save();
+            c.clipPath(shape);
+            if (backdrop != null && !backdrop.isRecycled()) {
+                // Kept registered to the screen, so the glass shows the part of the photo behind it.
+                owner.getLocationInWindow(loc);
+                View root = owner.getRootView();
+                dst.set(-loc[0], -loc[1], root.getWidth() - loc[0], root.getHeight() - loc[1]);
+                c.drawBitmap(backdrop, null, dst, image);
+            }
+            c.drawPath(shape, tint);
+            c.restoreToCount(save);
             c.drawPath(shape, edge);
         }
 

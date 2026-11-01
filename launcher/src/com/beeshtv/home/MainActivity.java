@@ -570,6 +570,7 @@ public class MainActivity extends Activity {
         fade.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, new int[]{0x00000000, 0x2E000000}));
         homeBox.addView(fade, new FrameLayout.LayoutParams(-1, dp(80), Gravity.BOTTOM));
         nameTip = new NameTip(this);
+        nameTip.setBackdrop(wallBlur);
         nameTip.setAlpha(0f);
         // Over every tile, the grown one included (they're raised to stack).
         nameTip.setTranslationZ(dp(8));
@@ -645,6 +646,7 @@ public class MainActivity extends Activity {
             v.setBackdrop(wallBlur);
         }
         for (BlurView v : sectionGlass) v.setBackdrop(wallBlur);
+        if (nameTip != null) nameTip.setBackdrop(wallBlur);
     }
 
     private void showPage(int i) {
@@ -1334,8 +1336,11 @@ public class MainActivity extends Activity {
         float x = at[0] - box[0] + v.getWidth() * v.getScaleX() / 2f - w / 2f;
         float y = at[1] - box[1] - h - dp(6);
         x = Math.max(dp(8), Math.min(homeBox.getWidth() - w - dp(8), x));
-        if (nameTip.getTranslationX() != x) nameTip.setTranslationX(x);
-        if (nameTip.getTranslationY() != y) nameTip.setTranslationY(y);
+        if (nameTip.getTranslationX() == x && nameTip.getTranslationY() == y) return;
+        nameTip.setTranslationX(x);
+        nameTip.setTranslationY(y);
+        // The glass shows the photo behind wherever it now is.
+        nameTip.invalidate();
     }
 
     /** How dark the other tiles of the focused one's section go: a black veil at this alpha (of 255). */
