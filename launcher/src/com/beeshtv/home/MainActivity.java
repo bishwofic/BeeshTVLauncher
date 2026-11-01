@@ -939,6 +939,8 @@ public class MainActivity extends Activity {
     private static final int[] METRO_COLS = {14, 12, 10, 8};
     /** Tiles touch, as on the Windows 8 Start screen. */
     private static final int METRO_GAP = 0;
+    /** Soft corners, so the wall doesn't read as hard rectangles. */
+    private static final int METRO_RADIUS = 8;
     private static final int[] METRO_COLOURS = {0xFF2D89EF, 0xFF00A300, 0xFFDA532C, 0xFF603CBA, 0xFFB91D47,
             0xFF00ABA9, 0xFFE3A21A, 0xFF1E7145};
     private final Map<String, Integer> accents = new HashMap<>();
@@ -965,7 +967,7 @@ public class MainActivity extends Activity {
         t.setId(View.generateViewId());
         t.setFocusable(true);
         t.setClipToOutline(true);
-        t.setOutlineProvider(roundOutline(2));
+        t.setOutlineProvider(roundOutline(METRO_RADIUS));
         t.setOutlineAmbientShadowColor(Color.TRANSPARENT);
         t.setOutlineSpotShadowColor(Color.TRANSPARENT);
         String label;
@@ -1108,7 +1110,7 @@ public class MainActivity extends Activity {
 
     private Drawable metroBorder() {
         GradientDrawable g = new GradientDrawable();
-        g.setCornerRadius(dp(2));
+        g.setCornerRadius(dp(METRO_RADIUS));
         g.setStroke(dp(2), Ui.TEXT);
         return g;
     }
