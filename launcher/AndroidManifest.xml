@@ -94,6 +94,12 @@
             android:name=".Updater$InstallStatus"
             android:exported="false" />
 
+        <!-- Shares the photo on Home and the weather, read-only, with BeeshTV Browser. -->
+        <provider
+            android:name=".ShareProvider"
+            android:authorities="com.beeshtv.home.share"
+            android:exported="true" />
+
         <!-- Lists and clears notifications for the bell in the menu bar, once access is granted. -->
         <service
             android:name=".NotificationsService"

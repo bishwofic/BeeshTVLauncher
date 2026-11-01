@@ -2502,6 +2502,7 @@ public class MainActivity extends Activity {
     /** Index 0 is here (under the main clock), then the world clock when it's on. */
     private void showWeather(Weather.Now[] now) {
         Weather.Now h = now == null || now.length == 0 ? null : now[0];
+        if (h != null) ShareProvider.remember(this, null, h);
         localWeatherRow.setVisibility(View.VISIBLE);
         localIcon.setVisibility(h == null ? View.GONE : View.VISIBLE);
         localIcon.setImageDrawable(h == null ? null : getDrawable(Weather.icon(h.code, h.day)));
@@ -2534,6 +2535,7 @@ public class MainActivity extends Activity {
     private void showWallpaper(String key) {
         if (key == null) return;
         wallKey = key;
+        ShareProvider.remember(this, key, null);
         wallSlot = Wallpapers.slotNow();
         wallShownAt = SystemClock.elapsedRealtime();
         walls.refreshIfDue(false, () -> { if (wallKey == null || wallKey.startsWith("asset:")) rotate.run(); });
