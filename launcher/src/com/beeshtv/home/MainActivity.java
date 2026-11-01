@@ -939,8 +939,8 @@ public class MainActivity extends Activity {
     private static final int[] METRO_COLS = {14, 12, 10, 8};
     /** Tiles touch, as on the Windows 8 Start screen. */
     private static final int METRO_GAP = 0;
-    /** Soft corners, so the wall doesn't read as hard rectangles. */
-    private static final int METRO_RADIUS = 8;
+    /** Tiles meet at nearly square corners; only the wall's own outer corners are rounded. */
+    private static final int METRO_RADIUS = 2, METRO_WALL_RADIUS = 14;
     private static final int[] METRO_COLOURS = {0xFF2D89EF, 0xFF00A300, 0xFFDA532C, 0xFF603CBA, 0xFFB91D47,
             0xFF00ABA9, 0xFFE3A21A, 0xFF1E7145};
     private final Map<String, Integer> accents = new HashMap<>();
@@ -1040,10 +1040,44 @@ public class MainActivity extends Activity {
             lp.leftMargin = c * step;
             lp.topMargin = r * step;
             box.addView(t, lp);
+            t.setTag(R.id.corners, new int[]{r, c});
             bottom = Math.max(bottom, lp.topMargin + lp.height);
         }
         box.setMinimumHeight(bottom);
+        // Round only the corners of the wall's outline: a tile's corner with no tile beside it either way.
+        for (View t : s.cards) {
+            int[] at = (int[]) t.getTag(R.id.corners), span = (int[]) t.getTag(R.id.span);
+            int r = at[0], c = at[1], w = span[0], h = span[1];
+            float in = dp(METRO_RADIUS), out = dp(METRO_WALL_RADIUS);
+            float tl = !taken(used, r - 1, c, cols) && !taken(used, r, c - 1, cols) ? out : in;
+            float tr = !taken(used, r - 1, c + w - 1, cols) && !taken(used, r, c + w, cols) ? out : in;
+            float br = !taken(used, r + h, c + w - 1, cols) && !taken(used, r + h - 1, c + w, cols) ? out : in;
+            float bl = !taken(used, r + h, c, cols) && !taken(used, r + h - 1, c - 1, cols) ? out : in;
+            float[] radii = {tl, tl, tr, tr, br, br, bl, bl};
+            t.setTag(R.id.corners, radii);
+            t.setOutlineProvider(cornersOutline(radii));
+        }
         return box;
+    }
+
+    private static boolean taken(List<boolean[]> used, int r, int c, int cols) {
+        return r >= 0 && r < used.size() && c >= 0 && c < cols && used.get(r)[c];
+    }
+
+    /** Each corner its own radius. Clipping to such a shape needs Android 13; before, all corners match. */
+    private ViewOutlineProvider cornersOutline(float[] radii) {
+        return new ViewOutlineProvider() {
+            @Override public void getOutline(View v, Outline o) {
+                if (Build.VERSION.SDK_INT >= 33) {
+                    android.graphics.Path p = new android.graphics.Path();
+                    p.addRoundRect(new android.graphics.RectF(0, 0, v.getWidth(), v.getHeight()), radii,
+                            android.graphics.Path.Direction.CW);
+                    o.setPath(p);
+                } else {
+                    o.setRoundRect(0, 0, v.getWidth(), v.getHeight(), radii[0] == radii[2] ? radii[0] : dp(METRO_RADIUS));
+                }
+            }
+        };
     }
 
     private static boolean fits(List<boolean[]> used, int r, int c, int[] span, int cols) {
@@ -1054,7 +1088,6 @@ public class MainActivity extends Activity {
         return true;
     }
 
-    /** A solid colour from the app's icon, deep enough for white text; a Metro colour if it's grey. */
     /** The colour down a banner's left and right edges, to continue it past them; fallback if it varies. */
     private static int edgeColour(Drawable art, int fallback) {
         try {
@@ -1079,6 +1112,7 @@ public class MainActivity extends Activity {
         }
     }
 
+    /** A solid colour from the app's icon, deep enough for white text; a Metro colour if it's grey. */
     private int accent(App a) {
         Integer known = accents.get(a.pkg);
         if (known != null) return known;
@@ -1108,9 +1142,11 @@ public class MainActivity extends Activity {
         return colour;
     }
 
-    private Drawable metroBorder() {
+    private Drawable metroBorder(View tile) {
         GradientDrawable g = new GradientDrawable();
-        g.setCornerRadius(dp(METRO_RADIUS));
+        Object radii = tile.getTag(R.id.corners);
+        if (radii instanceof float[] && Build.VERSION.SDK_INT >= 33) g.setCornerRadii((float[]) radii);
+        else g.setCornerRadius(dp(METRO_RADIUS));
         g.setStroke(dp(2), Ui.TEXT);
         return g;
     }
@@ -1314,7 +1350,7 @@ public class MainActivity extends Activity {
                     if (v.getParent() == dockRow) dockFocus(v, has); else pushFocus(v, has, FOCUS_SCALE);
                     break;
                 case Prefs.PILLS: ((Pill) v).paint(has); pushFocus(v, has, 1.1f); break;
-                case Prefs.METRO: v.setForeground(has ? metroBorder() : null); pushFocus(v, has, 1.1f); break;
+                case Prefs.METRO: v.setForeground(has ? metroBorder(v) : null); pushFocus(v, has, 1.1f); break;
                 default: pushFocus(v, has, FOCUS_SCALE); break;
             }
             // Focus left the tiles (menu bar, a panel): bring every section back to full brightness.
