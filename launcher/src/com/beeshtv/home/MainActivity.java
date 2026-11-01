@@ -569,6 +569,14 @@ public class MainActivity extends Activity {
         View fade = new View(this);
         fade.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, new int[]{0x00000000, 0x2E000000}));
         homeBox.addView(fade, new FrameLayout.LayoutParams(-1, dp(80), Gravity.BOTTOM));
+        nameTip = new NameTip(this);
+        nameTip.setAlpha(0f);
+        // Over every tile, the grown one included (they're raised to stack).
+        nameTip.setTranslationZ(dp(8));
+        nameTip.setOutlineProvider(null);
+        homeBox.addView(nameTip, new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.START));
+        // Every frame something moves (the tile growing, a row sliding, Home scrolling), the name follows.
+        homeBox.getViewTreeObserver().addOnPreDrawListener(() -> { placeName(); return true; });
         return homeBox;
     }
 
@@ -1076,7 +1084,6 @@ public class MainActivity extends Activity {
 
     private static final int[] DOCK = {44, 56, 72, 88};
     private LinearLayout dockRow;
-    private TextView dockLabel;
 
     private FrameLayout dockStrip;
     private LinearLayout dockDots;
@@ -1139,14 +1146,6 @@ public class MainActivity extends Activity {
         bar.addView(dockStrip, new FrameLayout.LayoutParams(dockPageW, d));
         s.cols = s.cards.size();
 
-        dockLabel = Ui.text(this, 13, 600, 0xFF111111);
-        dockLabel.setPadding(dp(10), dp(5), dp(10), dp(5));
-        GradientDrawable lb = new GradientDrawable();
-        lb.setCornerRadius(dp(8));
-        lb.setColor(0xF2FFFFFF);
-        dockLabel.setBackground(lb);
-        dockLabel.setAlpha(0f);
-        box.addView(dockLabel, new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.START));
         box.addView(bar, lp(-2, -2, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL, 0, 0, 0, pages > 1 ? dp(16) : 0));
         dockDots = new LinearLayout(this);
         if (pages > 1) {
@@ -1201,7 +1200,6 @@ public class MainActivity extends Activity {
                     View c = dockRow.getChildAt(k);
                     c.animate().scaleX(1f).scaleY(1f).translationX(0).setInterpolator(FOCUS_EASE).setDuration(260).start();
                 }
-                dockLabel.animate().alpha(0f).setDuration(120).start();
             });
             return;
         }
@@ -1233,15 +1231,6 @@ public class MainActivity extends Activity {
             c.setPivotY(c.getHeight());
             c.animate().scaleX(scale[k]).scaleY(scale[k]).translationX(tx).setInterpolator(FOCUS_EASE).setDuration(300).start();
         }
-        dockLabel.setText(v.getContentDescription());
-        dockLabel.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
-        // From the bar's place in the dock box, where the strip is heading, and the icon in the strip.
-        View bar = (View) dockStrip.getParent();
-        float cx = bar.getLeft() + bar.getPaddingLeft() - dockPage * dockPageW + v.getLeft() + v.getWidth() / 2f;
-        float top = bar.getTop() + bar.getPaddingTop() + v.getBottom() - v.getHeight() * scale[f];
-        dockLabel.setTranslationX(cx - dockLabel.getMeasuredWidth() / 2f);
-        dockLabel.setTranslationY(top - dockLabel.getMeasuredHeight() - dp(10));
-        dockLabel.animate().alpha(1f).setDuration(160).start();
     }
 
     // ---- shared by the layouts
@@ -1294,8 +1283,12 @@ public class MainActivity extends Activity {
                 default: pushFocus(v, has, FOCUS_SCALE); break;
             }
             // Focus left the tiles (menu bar, a panel): bring every section back to full brightness.
-            if (!has) handler.post(() -> { if (!cardPos.containsKey(getCurrentFocus())) spotlight(null); });
+            if (!has) handler.post(() -> {
+                if (!cardPos.containsKey(getCurrentFocus())) { spotlight(null); showName(null); }
+            });
             else spotlight(v);
+            // The app's name over it; Pills show the name on the tile already.
+            if (has) showName(look == Prefs.PILLS ? null : v);
             if (!has) return;
             int[] pos = cardPos.get(v);
             lastPos = pos;
@@ -1307,6 +1300,42 @@ public class MainActivity extends Activity {
             if (pos != null && pos[0] == 0 && first != null && centre(v)[1] - centre(first)[1] < dp(8)) glide(homeScroll, 0, 0);
             else ensureVisible(homeScroll, look == Prefs.ROWS || look == Prefs.METRO ? v : (View) v.getParent(), dp(64));
         });
+    }
+
+    private NameTip nameTip;
+    /** The tile the name pill is over; null while it's hidden. */
+    private View named;
+
+    /** Shows the tile's name over it (null hides it). */
+    private void showName(View v) {
+        if (nameTip == null) return;
+        named = v;
+        if (v == null) { nameTip.animate().alpha(0f).setDuration(120).start(); return; }
+        Object t = v.getTag();
+        CharSequence name = t instanceof App ? ((App) t).label : t instanceof Input ? ((Input) t).label : v.getContentDescription();
+        if (name == null) { showName(null); return; }
+        nameTip.setText(name);
+        nameTip.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
+        nameTip.layout(nameTip.getLeft(), nameTip.getTop(), nameTip.getLeft() + nameTip.getMeasuredWidth(),
+                nameTip.getTop() + nameTip.getMeasuredHeight());
+        nameTip.requestLayout();
+        placeName();
+        nameTip.animate().alpha(1f).setDuration(160).start();
+    }
+
+    /** Centred just above the tile as it looks this frame: grown, slid aside, scrolled. */
+    private void placeName() {
+        View v = named;
+        if (v == null || nameTip == null || !v.isAttachedToWindow()) return;
+        int[] at = new int[2], box = new int[2];
+        v.getLocationInWindow(at);
+        homeBox.getLocationInWindow(box);
+        float w = nameTip.getMeasuredWidth(), h = nameTip.getMeasuredHeight();
+        float x = at[0] - box[0] + v.getWidth() * v.getScaleX() / 2f - w / 2f;
+        float y = at[1] - box[1] - h - dp(6);
+        x = Math.max(dp(8), Math.min(homeBox.getWidth() - w - dp(8), x));
+        if (nameTip.getTranslationX() != x) nameTip.setTranslationX(x);
+        if (nameTip.getTranslationY() != y) nameTip.setTranslationY(y);
     }
 
     /** How dark the other tiles of the focused one's section go: a black veil at this alpha (of 255). */
@@ -1373,7 +1402,7 @@ public class MainActivity extends Activity {
 
     /** How much a tile beside the focused one grows, by how far away it is: as in the Dock, but gentler. */
     private static float neighbourScale(float focusScale, int away) {
-        return away == 0 ? focusScale : away == 1 ? 1f + (focusScale - 1f) * 0.35f : away == 2 ? 1f + (focusScale - 1f) * 0.1f : 1f;
+        return away == 0 ? focusScale : away == 1 ? 1f + (focusScale - 1f) * 0.45f : away == 2 ? 1f + (focusScale - 1f) * 0.12f : 1f;
     }
 
     private void pushRow(Section s, View v, float focusScale) {
@@ -1407,28 +1436,29 @@ public class MainActivity extends Activity {
             float x = from;
             for (int k = f - 1; k >= 0; k--) { x -= gap; cx[k] = x - width[k] * scale[k] / 2f; x -= width[k] * scale[k]; }
         }
-        // The rows above and below step away by as much as the focused tile grew upwards and downwards.
-        float rise = (focusScale - 1f) * v.getHeight() / 2f;
+        // Only the focused row moves, as in the Dock; the rest of the section stays where it is.
         for (int i = 0; i < s.cards.size(); i++) {
             View c = s.cards.get(i);
-            int r = i / cols;
-            if (r == row) {
+            if (i / cols == row) {
                 int k = i - start;
                 move(c, scale[k], cx[k] - (left[k] + width[k] / 2f), 0f, k == f ? 2 : scale[k] > 1f ? 1 : 0);
             } else {
-                move(c, 1f, 0f, r < row ? -rise : rise, 0);
+                move(c, 1f, 0f, 0f, 0);
             }
         }
     }
 
-    /** Metro: the focused tile grows and every tile beside, above or below it moves out of its way. */
+    /**
+     * Metro: the focused tile grows and the tiles beside it, in its own band of the wall, slide left and
+     * right out of its way; everything above and below stays put.
+     */
     private void openMosaic(Section s, View v, float focusScale) {
-        float dx = (focusScale - 1f) * v.getWidth() / 2f, dy = (focusScale - 1f) * v.getHeight() / 2f;
+        float dx = (focusScale - 1f) * v.getWidth() / 2f;
         for (View c : s.cards) {
             if (c == v) { move(c, focusScale, 0f, 0f, 2); continue; }
-            float x = c.getRight() <= v.getLeft() ? -dx : c.getLeft() >= v.getRight() ? dx : 0f;
-            float y = c.getBottom() <= v.getTop() ? -dy : c.getTop() >= v.getBottom() ? dy : 0f;
-            move(c, 1f, x, y, 0);
+            boolean beside = c.getBottom() > v.getTop() && c.getTop() < v.getBottom();
+            float x = !beside ? 0f : c.getRight() <= v.getLeft() ? -dx : c.getLeft() >= v.getRight() ? dx : 0f;
+            move(c, 1f, x, 0f, 0);
         }
     }
 
