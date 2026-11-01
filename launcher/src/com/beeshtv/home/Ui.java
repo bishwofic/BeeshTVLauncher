@@ -111,6 +111,23 @@ final class Ui {
     }
 
     /**
+     * Frosts a small picture in place, at its own size: three box passes of radius r (close to a
+     * gaussian) and the App Library's lift in colour. For glass over a small patch of screen, where
+     * blur() would shrink what's behind it to a smear.
+     */
+    static void frost(Bitmap b, int r) {
+        int w = b.getWidth(), h = b.getHeight();
+        int[] px = new int[w * h];
+        b.getPixels(px, 0, w, 0, 0, w, h);
+        for (int pass = 0; pass < 3; pass++) {
+            boxBlur(px, w, h, r, true);
+            boxBlur(px, w, h, r, false);
+        }
+        saturate(px, 1.35f);
+        b.setPixels(px, 0, w, 0, 0, w, h);
+    }
+
+    /**
      * A light, even blur for the wallpaper: half the size, one box-blur pass, then drawn back up to full
      * screen by the ImageView. Also a quarter of the memory of the full photo.
      */

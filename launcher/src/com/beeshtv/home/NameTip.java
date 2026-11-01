@@ -36,9 +36,16 @@ final class NameTip extends TextView {
         setPadding(Ui.dp(c, 8), Ui.dp(c, 3), Ui.dp(c, 8), Ui.dp(c, 4) + Math.round(point));
     }
 
-    /** A blurred picture of the screen (as a panel's), or of the photo until there is one. */
+    /** The blurred photo, for wherever no picture of what's behind the pill has been taken yet. */
     void setBackdrop(Bitmap b) {
         glass.backdrop = b;
+        invalidate();
+    }
+
+    /** What's behind the pill, frosted: a picture of the patch of screen at `at` (screen pixels). */
+    void setBehind(Bitmap b, RectF at) {
+        glass.behind = b;
+        glass.behindAt.set(at);
         invalidate();
     }
 
@@ -51,15 +58,16 @@ final class NameTip extends TextView {
         private final RectF dst = new RectF();
         private final int[] loc = new int[2];
         private final float radius, pointW, pointH;
-        Bitmap backdrop;
+        Bitmap backdrop, behind;
+        final RectF behindAt = new RectF();
 
         Glass(View owner, float radius, float pointW, float pointH, float stroke) {
             this.owner = owner;
             this.radius = radius;
             this.pointW = pointW;
             this.pointH = pointH;
-            // The panels' tint (BlurView at darken 0.30).
-            tint.setColor(0x4D000000);
+            // The panels' tint (BlurView at darken 0.30), a shade deeper for such small text.
+            tint.setColor(0x5C000000);
             edge.setStyle(Paint.Style.STROKE);
             edge.setStrokeWidth(stroke);
             edge.setColor(0x33FFFFFF);
@@ -90,12 +98,17 @@ final class NameTip extends TextView {
         public void draw(Canvas c) {
             int save = c.save();
             c.clipPath(shape);
+            // Everything kept registered to the screen, so the glass shows what's behind it.
+            owner.getLocationInWindow(loc);
             if (backdrop != null && !backdrop.isRecycled()) {
-                // Kept registered to the screen, so the glass shows the part of the photo behind it.
-                owner.getLocationInWindow(loc);
                 View root = owner.getRootView();
                 dst.set(-loc[0], -loc[1], root.getWidth() - loc[0], root.getHeight() - loc[1]);
                 c.drawBitmap(backdrop, null, dst, image);
+            }
+            if (behind != null && !behind.isRecycled()) {
+                dst.set(behindAt);
+                dst.offset(-loc[0], -loc[1]);
+                c.drawBitmap(behind, null, dst, image);
             }
             c.drawPath(shape, tint);
             c.restoreToCount(save);

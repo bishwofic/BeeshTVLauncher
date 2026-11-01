@@ -1317,7 +1317,8 @@ public class MainActivity extends Activity {
         CharSequence name = t instanceof App ? ((App) t).label : t instanceof Input ? ((Input) t).label : v.getContentDescription();
         if (name == null) { showName(null); return; }
         nameTip.setText(name);
-        // Its glass: the screen behind it, once the tiles have stopped moving.
+        // Its glass: the screen behind it, once the tiles have stopped moving; the photo until then.
+        nameTip.setBehind(null, new android.graphics.RectF());
         handler.removeCallbacks(frostName);
         handler.postDelayed(frostName, 340);
         nameTip.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
@@ -1329,17 +1330,26 @@ public class MainActivity extends Activity {
     }
 
     /**
-     * A blurred picture of the screen without the pill, the way a panel frosts what's behind it. Taken
-     * when focus has settled, not on every step of a held D-pad; until then the last one stands in.
+     * What's behind the pill (the tile above, the photo), frosted: a half-size picture of that patch of
+     * screen, without the pill, lightly blurred so shapes and colours still read through it. Taken when
+     * focus has settled, not on every step of a held D-pad.
      */
     private final Runnable frostName = () -> {
         if (named == null || panel != null || nameTip == null || root.getWidth() == 0) return;
+        int[] at = new int[2];
+        nameTip.getLocationInWindow(at);
+        int pad = dp(12), x = at[0] - pad, y = at[1] - pad;
+        int w = nameTip.getWidth() + 2 * pad, h = nameTip.getHeight() + 2 * pad;
+        if (w <= 2 * pad || h <= 2 * pad) return;
+        Bitmap shot = Bitmap.createBitmap(Math.max(1, w / 2), Math.max(1, h / 2), Bitmap.Config.ARGB_8888);
+        Canvas c = new Canvas(shot);
+        c.scale(0.5f, 0.5f);
+        c.translate(-x, -y);
         nameTip.setVisibility(View.INVISIBLE);
-        Bitmap shot = snapshot();
+        root.draw(c);
         nameTip.setVisibility(View.VISIBLE);
-        Bitmap blurred = Ui.blur(shot, 0f);
-        shot.recycle();
-        nameTip.setBackdrop(blurred);
+        Ui.frost(shot, Math.max(1, dp(3)));
+        nameTip.setBehind(shot, new android.graphics.RectF(x, y, x + w, y + h));
     };
 
     /** Centred just above the tile as it looks this frame: grown, slid aside, scrolled. */
