@@ -317,10 +317,20 @@ final class Wallpapers {
         if (files == null) return;
         Arrays.sort(files, (a, b) -> Long.compare(b.lastModified(), a.lastModified()));
         int kept = 0;
+        // The photo kept while shuffle is off is never cleared away.
+        String pinned = prefs.wallPinned();
         for (File f : files) {
+            if (f.getPath().equals(pinned)) continue;
             //noinspection ResultOfMethodCallIgnored
             if (f.getName().endsWith(".tmp") || ++kept > KEEP) f.delete();
         }
+    }
+
+    /** Whether a photo (a file, or one built into the app) is still there to show. */
+    static boolean exists(Context c, String key) {
+        if (key == null) return false;
+        if (!key.startsWith("asset:")) return new File(key).exists();
+        try (InputStream in = c.getAssets().open(key.substring(6))) { return true; } catch (IOException e) { return false; }
     }
 
     static byte[] get(String url) throws IOException {

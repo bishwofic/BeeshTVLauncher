@@ -34,6 +34,10 @@ No ads, no rows of recommendations, no account.
 - **Updates itself** from this repo's GitHub releases: a new version downloads in the background and
   an **Update** button appears next to Home / Apps. **Settings → Updates** checks on demand.
 - **Every app** one tab over, in a full-screen A–Z list.
+- **Recent apps**: press Home twice. The apps you used last, newest first; OK opens one, Up takes it off
+  the list, and **Clear all** stops them all and says how much memory came back. Android 14 only lets
+  the shell stop other apps, so Clear all goes through the TV's own network debugging: the first time,
+  the TV asks to allow BeeshTV (choose Always allow). The list needs Usage access, asked for in setup.
 - **Dynamic wallpapers** from wallhaven.cc that follow the time of day (morning, day, evening, night),
   in three styles: landscapes, cityscapes or the current season.
 - **Wi-Fi, Bluetooth, Inputs and Notifications** panels: see your network and nearby ones, which
@@ -51,12 +55,12 @@ No ads, no rows of recommendations, no account.
 ## Install
 
 You need a computer with `adb` on the same Wi-Fi as the TV (`brew install android-platform-tools` on
-a Mac). Works on Android TV and Google TV running Android 11 or newer.
+a Mac). Works on Android TV and Google TV running Android 9 or newer.
 
 1. On the TV, open **Settings → System → About** and press OK on **Android TV OS build** seven times.
    Go back to **Settings → System → Developer options** and turn on **USB debugging**.
 2. Find the TV's IP address in **Settings → Network & Internet** (select your Wi-Fi network).
-3. Download this repo (or just `dist/BeeshTV-Launcher-3.2.apk` and `install.sh`) and run:
+3. Download this repo (or just `dist/BeeshTV-Launcher-3.3.apk` and `install.sh`) and run:
 
    ```bash
    ./install.sh 192.168.1.20
@@ -76,7 +80,7 @@ To go back to the stock home screen (and automatic Private DNS): `./install.sh 1
 
 ### Installing just the APK
 
-Download `BeeshTV-Launcher-3.2.apk` from the [latest release](https://github.com/bishwofic/BeeshTVLauncher/releases/latest),
+Download `BeeshTV-Launcher-3.3.apk` from the [latest release](https://github.com/bishwofic/BeeshTVLauncher/releases/latest),
 copy it to the TV (a USB stick, LocalSend, or a downloader app) and open it, then open
 **BEESH Launcher** from the TV's apps. Setup opens by itself and asks for what it needs, one at a
 time: location (for local weather; the time zone always comes from the TV), notification access (for
@@ -98,7 +102,7 @@ switches Google TV's home screen off.
 
 ```bash
 adb connect 192.168.1.20:5555
-adb install BeeshTV-Launcher-3.2.apk
+adb install BeeshTV-Launcher-3.3.apk
 adb shell cmd package set-home-activity com.beeshtv.home/.MainActivity
 ```
 
@@ -140,7 +144,7 @@ adb shell appops set com.beeshtv.home REQUEST_INSTALL_PACKAGES allow
 | Page | |
 |---|---|
 | Look | Layout, icon size (and Dock size), spacing for Tiles, section background and its blur |
-| Wallpaper | Style, how often it changes, next photo, fetch new photos |
+| Wallpaper | Style, shuffle on or off (off keeps the photo on screen), how often it changes, next photo, fetch new photos |
 | World clock | The city on the left of the menu bar, or off |
 | Updates | Installed version, check now, download and install, automatic downloads on or off |
 | Permissions | The setup list, with what's still missing |
@@ -176,6 +180,31 @@ The default Home apps, hidden apps and city list are at the top of
 The APK is signed with `launcher/debug.keystore`, created on the first build (it isn't in the repo).
 An update only installs over an older version signed with the same key, so if you build your own,
 uninstall the release APK first.
+
+## Google Play build
+
+Google Play doesn't allow an app to update itself or install other apps, so the Play build leaves
+that out:
+
+```bash
+brew install bundletool
+launcher/build.sh --play          # builds dist/play/BeeshTV-Launcher-<version>.aab
+```
+
+- `src-play/` has an `Updater` that never checks GitHub and a `Suite` whose **Get BEESH Browser on
+  Google Play** opens the browser's Play Store page. They're compiled in place of the files of the
+  same name in `src/`, and `Updater.PLAY` hides the GitHub-only rows in Settings and setup.
+- The Play manifest has no `REQUEST_INSTALL_PACKAGES` and no installer receiver.
+- The bundle is signed with an upload key, `launcher/upload.keystore`, created on the first
+  `--play` build with a password you choose (`BEESH_UPLOAD_PASS` skips the prompt). Back it up and
+  never publish it. Google Play signs the APKs it hands out with its own app signing key. To let TVs
+  that sideloaded the GitHub APK update from Play, give Play `debug.keystore` as the app signing key
+  when you set up Play App Signing; otherwise they have to uninstall first.
+
+In the Play Console, fill in the accessibility declaration for *BEESH Home button* (what it does:
+it only catches the Home key so Home opens BeeshTV, and reads nothing on screen), along with a
+privacy policy and the Data safety form (location for weather and Wi-Fi, notifications for the bell,
+the IP lookup through ipwho.is).
 
 ## Clean up a TCL TV (optional)
 

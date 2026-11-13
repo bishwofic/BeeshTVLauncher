@@ -194,7 +194,12 @@ public class MainActivity extends Activity {
     };
 
     private final BroadcastReceiver tick = new BroadcastReceiver() {
-        @Override public void onReceive(Context c, Intent i) { updateClocks(); updateWifiIcon(); }
+        @Override public void onReceive(Context c, Intent i) {
+            updateClocks();
+            updateWifiIcon();
+            // Fetches only when the last answer is an hour old, so Home left on screen stays current.
+            if (Intent.ACTION_TIME_TICK.equals(i.getAction())) refreshWeather(false);
+        }
     };
     private final BroadcastReceiver packages = new BroadcastReceiver() {
         @Override public void onReceive(Context c, Intent i) {
@@ -272,10 +277,16 @@ public class MainActivity extends Activity {
         }
         if (firstShow) { firstShow = false; playEntrance(); }
         long interval = prefs.wallMinutes() * 60_000L;
-        if (wallKey == null || wallSlot != Wallpapers.slotNow()
+        if (!prefs.wallShuffle()) {
+            // Shuffle off: the photo it was turned off on, from a restart too.
+            if (wallKey == null) {
+                String pin = prefs.wallPinned();
+                if (pin != null && Wallpapers.exists(this, pin)) showWallpaper(pin); else rotate.run();
+            }
+        } else if (wallKey == null || wallSlot != Wallpapers.slotNow()
                 || SystemClock.elapsedRealtime() - wallShownAt >= interval) rotate.run();
         else scheduleRotation();
-        walls.refreshIfDue(false, () -> { if (wallKey == null || wallKey.startsWith("asset:")) rotate.run(); });
+        if (prefs.wallShuffle()) walls.refreshIfDue(false, () -> { if (wallKey == null || wallKey.startsWith("asset:")) rotate.run(); });
         here.refreshIfDue(() -> { applyClocks(); refreshWeather(true); });
         refreshWeather(false);
         updater.check(false);
@@ -299,9 +310,23 @@ public class MainActivity extends Activity {
         super.onDestroy();
     }
 
+    /** When Home was last pressed, to tell a double press (recent apps) from a single one. */
+    private long lastHomeAt;
+    private static final long DOUBLE_HOME_MS = 600;
+    private Recents recents;
+
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
+        if (intent != null && intent.hasCategory(Intent.CATEGORY_HOME)) {
+            long now = SystemClock.uptimeMillis();
+            boolean twice = now - lastHomeAt < DOUBLE_HOME_MS;
+            lastHomeAt = twice ? 0 : now;
+            // Home with recent apps open just closes them; Home twice opens them, like a phone's.
+            if (recents != null) { closeRecents(); lastHomeAt = 0; return; }
+            if (twice) { openRecents(); return; }
+        }
+        if (recents != null) closeRecents();
         // Home pressed while already home: close any panel, back to the first app.
         if (panel != null) closePanel(false);
         showPage(0);
@@ -700,6 +725,11 @@ public class MainActivity extends Activity {
         android.content.pm.ChangedPackages changed = pm.getChangedPackages(packageSeq);
         if (changed != null) packageSeq = changed.getSequenceNumber();
         apps.clear();
+        // The largest anything is drawn, zoom included, whatever the size settings: an icon in the
+        // biggest dock under focus, a banner across two of the biggest tiles under focus.
+        int iconMax = dp(DOCK[DOCK.length - 1] * DOCK_ZOOM);
+        int bannerW = Math.round(2 * availWidth() / (float) METRO_COLS[METRO_COLS.length - 1] * FOCUS_SCALE);
+        android.content.res.Resources res = getResources();
         Intent q = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER);
         for (ResolveInfo ri : pm.queryIntentActivities(q, 0)) {
             ActivityInfo ai = ri.activityInfo;
@@ -712,11 +742,18 @@ public class MainActivity extends Activity {
             if (banner == null) banner = ai.applicationInfo.loadBanner(pm);
             a.isBanner = banner != null;
             a.removable = (ai.applicationInfo.flags & android.content.pm.ApplicationInfo.FLAG_SYSTEM) == 0;
-            a.icon = ri.loadIcon(pm);
-            a.art = banner != null ? banner : a.icon;
+            a.icon = Ui.flatten(res, ri.loadIcon(pm), iconMax, iconMax);
+            a.art = banner != null ? Ui.flatten(res, banner, bannerW, bannerW) : a.icon;
             apps.put(a.pkg, a);
         }
+        // The full-size originals are garbage now, but their pixels sit outside the small Java heap,
+        // so nothing prompts a collection: Home could idle for hours holding them. One collection,
+        // once the screen is up, hands them back.
+        handler.removeCallbacks(collect);
+        handler.postDelayed(collect, 3000);
     }
+
+    private final Runnable collect = () -> Runtime.getRuntime().gc();
 
     /** Letters A–Z, then names starting with anything else, like iOS. */
     private static final Comparator<App> AZ = (x, y) -> {
@@ -1154,6 +1191,8 @@ public class MainActivity extends Activity {
     // ---- Dock: Your apps in a glass bar at the foot of the screen, magnifying like the macOS Dock
 
     private static final int[] DOCK = {44, 56, 72, 88};
+    /** How much the focused dock icon grows. */
+    private static final float DOCK_ZOOM = 1.35f;
     private LinearLayout dockRow;
 
     private FrameLayout dockStrip;
@@ -1287,7 +1326,7 @@ public class MainActivity extends Activity {
         for (int k = 0; k < n; k++) {
             View c = dockRow.getChildAt(k);
             int d = Math.abs(k - f);
-            scale[k] = d == 0 ? 1.35f : d == 1 ? 1.15f : d == 2 ? 1.05f : 1f;
+            scale[k] = d == 0 ? DOCK_ZOOM : d == 1 ? 1.15f : d == 2 ? 1.05f : 1f;
             extra[k] = (scale[k] - 1f) * c.getWidth();
         }
         for (int k = 0; k < n; k++) {
@@ -1888,6 +1927,15 @@ public class MainActivity extends Activity {
 
     @Override
     public boolean dispatchKeyEvent(KeyEvent e) {
+        if (recents != null) {
+            int k = e.getKeyCode();
+            if (k == KeyEvent.KEYCODE_BACK || k == KeyEvent.KEYCODE_MENU) {
+                if (e.getAction() == KeyEvent.ACTION_UP) closeRecents();
+            } else {
+                recents.key(e);
+            }
+            return true;
+        }
         if (panel != null) {
             if (e.getKeyCode() == KeyEvent.KEYCODE_BACK) return super.dispatchKeyEvent(e);
             panel.key(e);
@@ -2264,6 +2312,30 @@ public class MainActivity extends Activity {
         else if (restoreFocus) focusContent();
     }
 
+    // ---- Recent apps (Home twice)
+
+    private void openRecents() {
+        if (recents != null) return;
+        if (panel != null) closePanel(false);
+        Bitmap backdrop = Ui.blur(snapshot(), 0f);
+        recents = new Recents(this, new Recents.Host() {
+            @Override public App app(String pkg) { return apps.get(pkg); }
+            @Override public void open(App a) { launchApp(a); }
+            @Override public void dismissed() { closeRecents(); }
+        }, prefs.raw(), backdrop);
+        root.addView(recents, new FrameLayout.LayoutParams(-1, -1));
+        recents.setAlpha(0f);
+        recents.animate().alpha(1f).setInterpolator(Ui.EASE).setDuration(180).start();
+    }
+
+    private void closeRecents() {
+        Recents r = recents;
+        if (r == null) return;
+        recents = null;
+        r.animate().alpha(0f).setInterpolator(Ui.EASE).setDuration(140).withEndAction(() -> root.removeView(r)).start();
+        focusContent();
+    }
+
     /** A 1/8-scale picture of the screen, for the panel's blur. */
     private Bitmap snapshot() {
         int w = Math.max(1, root.getWidth() / 8), h = Math.max(1, root.getHeight() / 8);
@@ -2329,7 +2401,10 @@ public class MainActivity extends Activity {
     }
 
     private int wifiLevelIcon(WifiManager wm, int rssi) {
-        int max = Math.max(1, wm.getMaxSignalLevel()), lvl = wm.calculateSignalLevel(rssi);
+        // Android 11 on says how many levels the TV has; before that, five.
+        int max, lvl;
+        if (Build.VERSION.SDK_INT >= 30) { max = Math.max(1, wm.getMaxSignalLevel()); lvl = wm.calculateSignalLevel(rssi); }
+        else { max = 4; lvl = WifiManager.calculateSignalLevel(rssi, 5); }
         int bars = 1 + Math.round(2f * lvl / max);
         return bars >= 3 ? R.drawable.ic_wifi_3 : bars == 2 ? R.drawable.ic_wifi_2 : R.drawable.ic_wifi_1;
     }
@@ -2531,8 +2606,17 @@ public class MainActivity extends Activity {
             rotate.run();
             walls.refreshIfDue(false, rotate::run);
         });
-        p.value("Change every", () -> prefs.wallMinutes() + " min",
-                d -> { prefs.setWallMinutes(Prefs.nextOf(Prefs.WALL_MINUTES, prefs.wallMinutes(), d)); scheduleRotation(); });
+        // Off keeps the photo that's on screen now, until it's turned back on (or Next photo picks another).
+        p.toggle("Shuffle photos", prefs::wallShuffle, on -> {
+            prefs.setWallShuffle(on);
+            prefs.setWallPinned(on ? null : wallKey);
+            scheduleRotation();
+            handler.post(p::refill);
+        });
+        if (prefs.wallShuffle()) {
+            p.value("Change every", () -> prefs.wallMinutes() + " min",
+                    d -> { prefs.setWallMinutes(Prefs.nextOf(Prefs.WALL_MINUTES, prefs.wallMinutes(), d)); scheduleRotation(); });
+        }
         p.row(0, "Next photo", walls.describe(), 0, () -> rotate.run());
         p.row(0, "Get new photos", null, 0, () -> walls.refreshIfDue(true, rotate::run));
     }
@@ -2544,6 +2628,7 @@ public class MainActivity extends Activity {
 
     /** The same words as BEESH Browser's Updates page. */
     private String updateSummary() {
+        if (Updater.PLAY) return "From Google Play";
         switch (updater.state()) {
             case CHECKING: return "Checking";
             case DOWNLOADING: return "Downloading " + updater.progress() + "%";
@@ -2559,6 +2644,10 @@ public class MainActivity extends Activity {
         p.header("Updates", null);
         Updater.State st = updater.state();
         p.row(0, "Version", updater.installed(), 0, null);
+        if (Updater.PLAY) {
+            p.note("Google Play keeps BeeshTV up to date, along with your other apps.");
+            return;
+        }
         p.row(0, "Status", updateSummary(), 0, null);
         if (st == Updater.State.READY || st == Updater.State.IDLE && updater.latest() != null
                 && Updater.isNewer(updater.latest(), updater.installed())) {
@@ -2643,7 +2732,8 @@ public class MainActivity extends Activity {
     }
 
     private boolean isHome() {
-        RoleManager rm = getSystemService(RoleManager.class);
+        // Roles are Android 10 on; before that, whichever app answers Home is the Home app.
+        RoleManager rm = Build.VERSION.SDK_INT >= 29 ? getSystemService(RoleManager.class) : null;
         if (rm != null && rm.isRoleAvailable(RoleManager.ROLE_HOME)) return rm.isRoleHeld(RoleManager.ROLE_HOME);
         ResolveInfo r = getPackageManager().resolveActivity(
                 new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME), PackageManager.MATCH_DEFAULT_ONLY);
@@ -2657,7 +2747,7 @@ public class MainActivity extends Activity {
 
     private boolean setupComplete() {
         return hasLocation() && locationOn() && notificationsAllowed() && homeKept() && updater.canInstall()
-                && bluetoothAllowed();
+                && bluetoothAllowed() && Recents.allowed(this);
     }
 
     /** Paired devices and their names need this from Android 12 on. */
@@ -2691,19 +2781,25 @@ public class MainActivity extends Activity {
         boolean bt = bluetoothAllowed();
         p.row(0, "Bluetooth, for paired devices", bt ? "Allowed" : "Allow", bt ? R.drawable.ic_check : R.drawable.ic_chevron,
                 bt ? null : this::requestBluetooth);
+        boolean usage = Recents.allowed(this);
+        p.row(0, "Usage access, for recent apps", usage ? "Allowed" : "Allow", usage ? R.drawable.ic_check : R.drawable.ic_chevron,
+                usage ? null : () -> { if (!launch(Recents.permissionScreen(this))) launch(new Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)); });
         p.row(0, "Use as Home screen", home ? "Yes" : "Set", home ? R.drawable.ic_check : R.drawable.ic_chevron,
                 home ? null : this::requestHome);
         if (HomeGuard.stockEnabled(this)) {
             boolean guard = HomeGuard.enabled(this);
             p.row(0, "Keep the Home button", guard ? "On" : "Turn on", guard ? R.drawable.ic_check : R.drawable.ic_chevron,
                     guard ? null : this::openAccessibilitySettings);
-            if (!guard) p.note("Google TV takes the Home button back for its own home screen. In the list that "
-                    + "opens, choose " + getString(R.string.home_guard_label) + " and turn it on. If the TV says "
-                    + "the setting is restricted, open App info for BeeshTV, allow restricted settings, then try again.");
+            if (!guard) p.note("Google TV takes the Home button back for its own home screen. This uses an "
+                    + "accessibility service that only catches the Home key: it reads nothing on screen and sends "
+                    + "nothing anywhere. In the list that opens, choose " + getString(R.string.home_guard_label)
+                    + " and turn it on. If the TV says the setting is restricted, open App info for BeeshTV, allow restricted settings, then try again.");
         }
-        boolean installs = updater.canInstall();
-        p.row(0, "Install updates from GitHub", installs ? "Allowed" : "Allow", installs ? R.drawable.ic_check : R.drawable.ic_chevron,
-                installs ? null : () -> launch(updater.installPermissionScreen()));
+        if (!Updater.PLAY) {
+            boolean installs = updater.canInstall();
+            p.row(0, "Install updates from GitHub", installs ? "Allowed" : "Allow", installs ? R.drawable.ic_check : R.drawable.ic_chevron,
+                    installs ? null : () -> launch(updater.installPermissionScreen()));
+        }
         fillSuite(p);
         p.row(R.drawable.ic_settings, "Open Launcher Settings", null, R.drawable.ic_chevron, this::openSettings);
         p.gap();
@@ -2751,12 +2847,15 @@ public class MainActivity extends Activity {
         String status = suite.state() == Suite.State.DOWNLOADING ? "Downloading " + suite.current() + " · " + suite.progress() + "%"
                 : suite.state() == Suite.State.INSTALLING ? "Installing " + suite.current()
                 : suite.state() == Suite.State.FAILED ? suite.error() : null;
-        String label = picked.isEmpty() ? "Nothing ticked" : picked.size() == 1 ? "Install " + picked.get(0).name
+        // The Play build can't install apps itself: it opens the first ticked one's Play Store page.
+        String label = picked.isEmpty() ? "Nothing ticked"
+                : Updater.PLAY ? "Get " + picked.get(0).name + " on Google Play"
+                : picked.size() == 1 ? "Install " + picked.get(0).name
                 : "Install " + picked.size() + " apps";
         p.row(R.drawable.ic_update, label, status, busy || picked.isEmpty() ? 0 : R.drawable.ic_chevron,
                 busy || picked.isEmpty() ? null : () -> {
                     // Installing apps needs the same permission as updates; the TV's switch for it first.
-                    if (!updater.canInstall()) { launch(updater.installPermissionScreen()); return; }
+                    if (!Updater.PLAY && !updater.canInstall()) { launch(updater.installPermissionScreen()); return; }
                     suite.install(picked);
                 });
     }
@@ -2774,7 +2873,8 @@ public class MainActivity extends Activity {
     }
 
     private void requestHome() {
-        RoleManager rm = getSystemService(RoleManager.class);
+        // Roles are Android 10 on; before that, whichever app answers Home is the Home app.
+        RoleManager rm = Build.VERSION.SDK_INT >= 29 ? getSystemService(RoleManager.class) : null;
         try {
             if (rm != null && rm.isRoleAvailable(RoleManager.ROLE_HOME)) {
                 startActivityForResult(rm.createRequestRoleIntent(RoleManager.ROLE_HOME), REQ_HOME);
@@ -2938,6 +3038,7 @@ public class MainActivity extends Activity {
     /** Next photo after the interval, or sooner when the time of day changes. */
     private void scheduleRotation() {
         handler.removeCallbacks(rotate);
+        if (!prefs.wallShuffle()) return;
         long interval = prefs.wallMinutes() * 60_000L;
         long left = wallKey == null ? 0 : interval - (SystemClock.elapsedRealtime() - wallShownAt);
         left = Math.min(left, Wallpapers.msToNextSlot() + 2000);
@@ -2948,10 +3049,12 @@ public class MainActivity extends Activity {
     private void showWallpaper(String key) {
         if (key == null) return;
         wallKey = key;
+        // With shuffle off, a photo chosen here (Next photo) is the one kept.
+        if (!prefs.wallShuffle()) prefs.setWallPinned(key);
         ShareProvider.remember(this, key, null);
         wallSlot = Wallpapers.slotNow();
         wallShownAt = SystemClock.elapsedRealtime();
-        walls.refreshIfDue(false, () -> { if (wallKey == null || wallKey.startsWith("asset:")) rotate.run(); });
+        if (prefs.wallShuffle()) walls.refreshIfDue(false, () -> { if (wallKey == null || wallKey.startsWith("asset:")) rotate.run(); });
         new Thread(() -> {
             Bitmap full = Wallpapers.decode(this, key);
             // A light blur over the whole photo so the tiles and clock sit forward of it.
@@ -2985,7 +3088,9 @@ public class MainActivity extends Activity {
         root.addView(wallFront, 1, new FrameLayout.LayoutParams(-1, -1));
         wallFront.setImageBitmap(bm);
         wallFront.setAlpha(0f);
-        wallFront.animate().alpha(1f).setDuration(firstWallpaper ? 500 : 1600).setInterpolator(Ui.EASE).withLayer()
+        // No layer: a lone ImageView fades the same without one, and a full-screen layer stays in the
+        // GPU's cache long after the fade (8 MB at 1080p).
+        wallFront.animate().alpha(1f).setDuration(firstWallpaper ? 500 : 1600).setInterpolator(Ui.EASE)
                 .withEndAction(() -> {
                     wallBack.setImageDrawable(null);
                     // The photo covers the whole screen now: the plain colour under it needn't be painted.

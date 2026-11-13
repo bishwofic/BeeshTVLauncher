@@ -110,6 +110,14 @@ final class Prefs {
     int wallMinutes() { return sp.getInt("wall_minutes", 10); }
     void setWallMinutes(int v) { sp.edit().putInt("wall_minutes", v).apply(); }
 
+    /** Photos change by themselves (on the interval and with the time of day). Off keeps one photo. */
+    boolean wallShuffle() { return sp.getBoolean("wall_shuffle", true); }
+    void setWallShuffle(boolean v) { sp.edit().putBoolean("wall_shuffle", v).apply(); }
+
+    /** The photo kept while shuffle is off. */
+    String wallPinned() { return sp.getString("wall_pinned", null); }
+    void setWallPinned(String key) { sp.edit().putString("wall_pinned", key).apply(); }
+
     /** The world clock's city (slot 0), or null when it's off. */
     String[] city(int slot) {
         String name = sp.getString("wc" + slot, DEFAULT_CITIES[slot]);

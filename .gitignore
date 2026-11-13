@@ -6,3 +6,5 @@ launcher/build/
 # Signing key: back it up, never publish it
 *.keystore
 *.idsig
+# Google Play bundles: uploaded to the Play Console, not published here
+dist/play/

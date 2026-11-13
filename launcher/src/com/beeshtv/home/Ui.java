@@ -87,6 +87,41 @@ final class Ui {
     }
 
     /**
+     * An app's icon or banner as one bitmap no bigger than maxW x maxH, its shape kept. Apps ship them
+     * far bigger than Home ever shows them, and an adaptive icon holds two full-size layers plus a
+     * render of them besides. Adaptive and vector art is drawn right at the cap, so it's as sharp as
+     * before; a plain bitmap is only ever shrunk, and kept as it is when it already fits.
+     */
+    static Drawable flatten(android.content.res.Resources r, Drawable d, int maxW, int maxH) {
+        int iw = d.getIntrinsicWidth(), ih = d.getIntrinsicHeight();
+        if (iw <= 0 || ih <= 0) return d;
+        float scale = Math.min(maxW / (float) iw, maxH / (float) ih);
+        Bitmap src = d instanceof android.graphics.drawable.BitmapDrawable
+                ? ((android.graphics.drawable.BitmapDrawable) d).getBitmap() : null;
+        if (src != null && scale >= 1f) return d;
+        int w = Math.max(1, Math.round(iw * scale)), h = Math.max(1, Math.round(ih * scale));
+        Bitmap out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+        out.setDensity(r.getDisplayMetrics().densityDpi);
+        android.graphics.Canvas c = new android.graphics.Canvas(out);
+        if (src != null) {
+            // Halve first: one big bilinear step skips pixels and the edges shimmer.
+            Bitmap step = src;
+            while (step.getWidth() >= 2 * w && step.getHeight() >= 2 * h) {
+                Bitmap half = Bitmap.createScaledBitmap(step, step.getWidth() / 2, step.getHeight() / 2, true);
+                if (step != src) step.recycle();
+                step = half;
+            }
+            c.drawBitmap(step, null, new android.graphics.Rect(0, 0, w, h),
+                    new android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG));
+            if (step != src) step.recycle();
+        } else {
+            d.setBounds(0, 0, w, h);
+            d.draw(c);
+        }
+        return new android.graphics.drawable.BitmapDrawable(r, out);
+    }
+
+    /**
      * The App Library blur, from a small (1/8 scale) picture of the screen: shrink it 4x, run three
      * box-blur passes (close to a gaussian), lift the saturation so colours glow through the way they
      * do on iOS, then scale back up. amount 0 is a soft blur, 1 a heavy one.

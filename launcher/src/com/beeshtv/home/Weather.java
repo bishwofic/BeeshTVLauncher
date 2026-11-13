@@ -15,7 +15,8 @@ import java.util.concurrent.Executors;
  * reply is kept, so a cold start shows something straight away.
  */
 final class Weather {
-    static final long REFRESH_MS = 30L * 60 * 1000;
+    /** At most once an hour: weather changes slowly, and each fetch wakes the network. */
+    static final long REFRESH_MS = 60L * 60 * 1000;
 
     static final class Now {
         int temp, hi, lo, code;
