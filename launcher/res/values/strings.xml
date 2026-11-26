@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="home_guard_label">BEESH Home button</string>
-    <string name="home_guard_description">Keeps the Home button on BeeshTV. Google TV takes it back for its own home screen otherwise. It only listens for the Home key and reads nothing on screen.</string>
+    <string name="home_guard_label">BEESH Home &amp; volume buttons</string>
+    <string name="home_guard_description">Keeps the Home button on BeeshTV, which Google TV otherwise takes back for its own home screen, and lets the volume buttons turn down speakers on the optical port, which the TV can\'t do itself. It only listens for the Home and volume keys and reads nothing on screen.</string>
 </resources>

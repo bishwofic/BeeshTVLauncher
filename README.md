@@ -49,6 +49,15 @@ No ads, no rows of recommendations, no account.
 - **Pairs with BEESH Browser**: the browser's home page shows the same weather, and its frosted
   background is your Home screen, blurred.
 - **Keeps the Home button** on Google TV, which otherwise hands it back to its own home screen.
+- **Volume for optical speakers** on TCL TVs, whose firmware holds the optical port at full volume
+  and says it "does not support volume adjustment". The remote's volume buttons work again: BeeshTV
+  turns the sound down before it reaches the port and shows its own volume bar over TCL's. Set
+  **Settings → Display & Sound → Advanced sound settings** to **None** (stereo), or the TV may send
+  Dolby straight through, which can't be turned down. Turn the speakers' own knob to the loudest
+  you'd ever want, not all the way: whenever BeeshTV isn't running (just after a restart, say) the
+  sound comes out at that level.
+- **Hold a volume button** and the volume keeps turning, as on most TVs; the TV's own remote only
+  ever moves it one step. Uses the TV's network debugging, like Clear all in Recents.
 - Small and quick: about 2 MB, plain Android, nothing running in the background except the
   notification listener and the Home button service.
 

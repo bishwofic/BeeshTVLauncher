@@ -18,12 +18,34 @@ import java.util.List;
  * other, so Home goes back to it even when BeeshTV is the Home app. Only a computer (adb) can switch
  * it off; without one, this catches the Home key and, should the stock home screen still come up (after
  * a restart, say), opens BeeshTV over it. It does nothing while the stock home screen is switched off.
+ * It also makes the volume work for speakers on the optical port (see OpticalVolume), and makes a
+ * held volume button keep turning the volume (see VolumeHold).
  */
 public class HomeGuard extends AccessibilityService {
     /** Stock home screens that take the Home button back while they're enabled. */
     static final List<String> STOCK = Arrays.asList(
             "com.google.android.apps.tv.launcherx", "com.google.android.tvlauncher",
             "com.google.android.leanbacklauncher");
+
+    /** Volume for speakers on the optical port, which the TV itself can't turn down. */
+    private OpticalVolume volume;
+    /** Holding a volume button keeps turning the volume, which the TV doesn't do itself. */
+    private VolumeHold hold;
+
+    @Override
+    protected void onServiceConnected() {
+        volume = new OpticalVolume(this);
+        hold = new VolumeHold(this);
+    }
+
+    @Override
+    public void onDestroy() {
+        if (volume != null) volume.destroy();
+        if (hold != null) hold.destroy();
+        volume = null;
+        hold = null;
+        super.onDestroy();
+    }
 
     @Override
     protected boolean onKeyEvent(KeyEvent e) {

@@ -27,10 +27,10 @@ import java.security.spec.X509EncodedKeySpec;
 import javax.crypto.Cipher;
 
 /**
- * Runs one shell command on this TV through its own network debugging (adb on port 5555), the way a
+ * Runs shell commands on this TV through its own network debugging (adb on port 5555), the way a
  * computer would. Since Android 14 an app can't stop another app's background processes itself, but
  * the shell can: Clear all in Recents uses this for `am kill`, which only stops apps that aren't on
- * screen or playing. The first time, the TV asks to allow BeeshTV's key, as it does for a computer;
+ * screen or playing. VolumeHold uses it to see a volume button held down, which no app can. The first time, the TV asks to allow BeeshTV's key, as it does for a computer;
  * the key stays in BeeshTV's private storage. Nothing here leaves the TV.
  *
  * The adb protocol, version 1, without TLS (what `adb connect` uses for network debugging).
@@ -52,8 +52,27 @@ final class Adb {
      * TV said no, or nobody answered the TV's question within a minute. Blocks: call off the main thread.
      */
     static String shell(Context c, String command) {
+        StringBuilder text = new StringBuilder();
+        return run(c, command, null, text::append) ? text.toString() : null;
+    }
+
+    /** Receives a command's output as it comes. */
+    interface Output { void write(String text); }
+
+    /**
+     * Runs a command that keeps going (getevent, say), handing its output over as it comes, until it
+     * ends or `socket` is closed from another thread. `socket` receives the connection once it's open.
+     * Returns false when it couldn't connect (see {@link #shell}); blocks: call off the main thread.
+     */
+    static boolean stream(Context c, String command, java.util.function.Consumer<Socket> socket, Output out) {
+        return run(c, command, socket, out);
+    }
+
+    private static boolean run(Context c, String command, java.util.function.Consumer<Socket> opened,
+            Output output) {
         error = null;
         try (Socket s = new Socket()) {
+            if (opened != null) opened.accept(s);
             s.connect(new InetSocketAddress("127.0.0.1", 5555), 1500);
             s.setSoTimeout(60_000);
             DataInputStream in = new DataInputStream(s.getInputStream());
@@ -64,7 +83,7 @@ final class Adb {
             while (true) {
                 Msg m = read(in);
                 if (m.cmd == CNXN) break;
-                if (m.cmd != AUTH || m.arg0 != TOKEN) { error = "unexpected reply"; return null; }
+                if (m.cmd != AUTH || m.arg0 != TOKEN) { error = "unexpected reply"; return false; }
                 if (!signed) {
                     send(out, AUTH, SIGNATURE, 0, sign(keys.getPrivate(), m.data));
                     signed = true;
@@ -73,24 +92,25 @@ final class Adb {
                     send(out, AUTH, PUBLIC_KEY, 0, publicKey((RSAPublicKey) keys.getPublic()));
                 }
             }
+            // A command that keeps going may be quiet for hours.
+            if (opened != null) s.setSoTimeout(0);
             send(out, OPEN, 1, 0, ("shell:" + command + "\0").getBytes(StandardCharsets.UTF_8));
-            StringBuilder text = new StringBuilder();
             while (true) {
                 Msg m = read(in);
                 if (m.cmd == WRTE) {
-                    text.append(new String(m.data, StandardCharsets.UTF_8));
+                    output.write(new String(m.data, StandardCharsets.UTF_8));
                     send(out, OKAY, 1, m.arg0, new byte[0]);
                 } else if (m.cmd == CLSE) {
                     send(out, CLSE, 1, m.arg0, new byte[0]);
-                    return text.toString();
+                    return true;
                 }
             }
         } catch (java.net.ConnectException | java.net.SocketTimeoutException e) {
             error = "network debugging is off";
-            return null;
+            return false;
         } catch (Exception e) {
             error = e.getClass().getSimpleName();
-            return null;
+            return false;
         }
     }
 
